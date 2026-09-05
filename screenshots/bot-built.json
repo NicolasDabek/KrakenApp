@@ -1,0 +1,41 @@
+{
+  "url": "http://127.0.0.1:8081/bot",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 1526,
+      "bodyTextHash": "ba68a4cb89e9c1d8a40c1f673225925818714f6507104af1c2bb7260848bc307",
+      "bodyTextPrefix": "Marchés Trade Bot Compte Ordres Outils LIVE Bots Automatisation ",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/bot-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 1551,
+      "bodyTextHash": "fbf19f445b36309feaf09e5cd24deb0ad0f01609d92f475be79a425b55ceeff6",
+      "bodyTextPrefix": "Nautilus KRAKEN LIVE 13:55:41 Bots Automatisation spot EUR sur K",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/bot-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/bot-built.json",
+  "divergesFromBaseline": true,
+  "baselineReasons": [
+    "desktop: body text replaced (similar length, page start changed)",
+    "mobile: body text replaced (similar length, page start changed)"
+  ]
+}

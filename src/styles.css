@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --color-background: #090a0c;
+  --color-foreground: #f1f3f6;
+  --color-card: #111318;
+  --color-card-foreground: #f1f3f6;
+  --color-popover: #181c23;
+  --color-popover-foreground: #f1f3f6;
+  --color-muted: #181c23;
+  --color-muted-foreground: #8b929e;
+  --color-subtle: #5c6370;
+  --color-border: #252a33;
+  --color-input: #252a33;
+  --color-ring: #5b8cff;
+  --color-accent: #5b8cff;
+  --color-accent-foreground: #07080a;
+  --color-secondary: #181c23;
+  --color-secondary-foreground: #f1f3f6;
+  --color-buy: #2fbe8f;
+  --color-buy-foreground: #04140e;
+  --color-sell: #e85d6c;
+  --color-sell-foreground: #1a0609;
+  --color-warning: #d4a054;
+  --color-destructive: #e85d6c;
+  --color-destructive-foreground: #f1f3f6;
+
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: var(--color-background);
+    color: var(--color-foreground);
+  }
+
+  body {
+    min-height: 100dvh;
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+
+  * {
+    border-color: var(--color-border);
+  }
+
+  input, textarea, select {
+    font: inherit;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.range-track {
+  background: linear-gradient(
+    90deg,
+    var(--color-sell) 0%,
+    color-mix(in oklab, var(--color-foreground) 18%, transparent) 50%,
+    var(--color-buy) 100%
+  );
+}

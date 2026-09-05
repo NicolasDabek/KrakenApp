@@ -1,0 +1,41 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 8768,
+      "bodyTextHash": "92298e193c358de176fecd4e3fd42e9088e98e531850d39b5915214e302e71f7",
+      "bodyTextPrefix": "Marchés Trade Bot Compte Ordres Outils LIVE Bureau Kraken 54 636",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 8793,
+      "bodyTextHash": "893c0802f7b26ea5c3f08556e2f99921d26083974ef0e322b7dfcf8ef4b318fb",
+      "bodyTextPrefix": "Nautilus KRAKEN LIVE 15:21:27 Bureau Kraken 54 636,86 $US 104,66",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-built.json",
+  "divergesFromBaseline": true,
+  "baselineReasons": [
+    "desktop: body text changed (5586 -> 8768 chars, hash mismatch)",
+    "mobile: body text changed (5603 -> 8793 chars, hash mismatch)"
+  ]
+}

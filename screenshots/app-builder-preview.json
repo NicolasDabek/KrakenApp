@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 5586,
+      "bodyTextHash": "15bebfa3899751e192b9e7034cde5ecf04ed5f91133f788e1bf886fb3e38ef75",
+      "bodyTextPrefix": "Marchés Trade Bot Compte Ordres Outils OFF Bureau Kraken 33 640,",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 5603,
+      "bodyTextHash": "2bbb766ce9a7804afcfd3d4a679b6a78ac6acd431c1a10ef2c17ae2fa2c6ee4a",
+      "bodyTextPrefix": "Nautilus HORS LIGNE Bureau Kraken 33 640,00 $US 0,00 $US / 24h T",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}

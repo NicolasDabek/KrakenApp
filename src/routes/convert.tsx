@@ -4,14 +4,19 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatQty } from "@/lib/trading/format";
-import { usdValue, useTradingStore } from "@/lib/trading/store";
+import { usdValue, isLiveConnected, liveBalanceRows, useTradingStore } from "@/lib/trading/store";
 
 export const Route = createFileRoute("/convert")({ component: ConvertPage });
 
 function ConvertPage() {
-  const balances = useTradingStore((s) => s.balances);
+  const demoBalances = useTradingStore((s) => s.balances);
+  const krakenBalances = useTradingStore((s) => s.krakenBalances);
+  const connection = useTradingStore((s) => s.connection);
+  const live = isLiveConnected(connection);
+  const balances = live ? liveBalanceRows(krakenBalances) : demoBalances;
   const tickers = useTradingStore((s) => s.tickers);
   const convert = useTradingStore((s) => s.convert);
+  const convertLive = useTradingStore((s) => s.convertLive);
   const assets = useMemo(
     () =>
       Array.from(
@@ -23,6 +28,7 @@ function ConvertPage() {
   const [to, setTo] = useState("BTC");
   const [amount, setAmount] = useState("100");
   const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const fromBal = balances.find((b) => b.asset === from)?.available ?? 0;
   const usd = usdValue(from, Number(amount) || 0, tickers);
@@ -31,12 +37,24 @@ function ConvertPage() {
 
   return (
     <div className="mx-auto max-w-md px-4 py-5">
-      <PageHeader title="Convertir" kicker="Swap interne au compte démo, frais taker 0,26 %" />
+      <PageHeader
+        title="Convertir"
+        kicker={live ? "Ordre marché Kraken (frais taker)" : "Swap interne au compte démo, frais taker 0,26 %"}
+      />
       <form
         className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
-          const res = convert(from, to, Number(amount) || 0);
+          const n = Number(amount) || 0;
+          if (live) {
+            setBusy(true);
+            void convertLive(from, to, n).then((res) => {
+              setMsg(res.message);
+              setBusy(false);
+            });
+            return;
+          }
+          const res = convert(from, to, n);
           setMsg(res.message);
         }}
       >
@@ -79,8 +97,8 @@ function ConvertPage() {
           ≈ {preview ? preview.toPrecision(6) : "—"} {to}
         </div>
         {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
-        <Button type="submit" className="w-full">
-          Convertir
+        <Button type="submit" className="w-full" disabled={busy}>
+          {busy ? "Envoi…" : "Convertir"}
         </Button>
       </form>
     </div>

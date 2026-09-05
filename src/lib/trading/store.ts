@@ -25,7 +25,7 @@ import type {
 } from "./types";
 import { applyPaperFill, DEFAULT_PAPER, EMPTY_STATS, evaluateBot, flattenPaper, kindNeedsCandles, kindTitle, paperEquity, resetPaperAccount, snapshotEquity } from "./bots";
 import { formatKrakenVolume, uid } from "./format";
-import { krakenAddOrder, krakenBalance } from "./functions";
+import { krakenAddOrder, krakenBalance, krakenCancel, krakenClosePosition, krakenConvert, krakenPlaceOrder, krakenSnapshot } from "./functions";
 import { DEFAULT_PAIR, PAIR_BY_ID, toEurPair } from "./pairs";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -83,6 +83,9 @@ type TradingState = {
   krakenSyncAt: number;
   krakenError: string | null;
   liveFills: LiveFill[];
+  krakenOrders: Order[];
+  krakenFills: Fill[];
+  krakenPositions: Position[];
   hydrateTickers: (list: Ticker[]) => void;
   setBook: (pair: string, book: OrderBook) => void;
   setTape: (pair: string, trades: TapeTrade[]) => void;
@@ -90,11 +93,15 @@ type TradingState = {
   setLastPair: (pair: string) => void;
   toggleWatch: (pair: string) => void;
   placeOrder: (input: NewOrderInput, opts?: { silent?: boolean }) => { ok: boolean; message: string; order?: Order };
+  placeLiveOrder: (input: NewOrderInput) => Promise<{ ok: boolean; message: string; order?: Order }>;
   cancelOrder: (id: string) => void;
+  cancelLiveOrder: (id: string) => Promise<{ ok: boolean; message: string }>;
   closePosition: (id: string) => void;
+  closeLivePosition: (id: string) => Promise<{ ok: boolean; message: string }>;
   addAlert: (alert: Omit<PriceAlert, "id" | "createdAt">) => void;
   removeAlert: (id: string) => void;
   convert: (from: string, to: string, amount: number) => { ok: boolean; message: string };
+  convertLive: (from: string, to: string, amount: number) => Promise<{ ok: boolean; message: string }>;
   addRecurring: (item: Omit<RecurringBuy, "id">) => void;
   toggleRecurring: (id: string) => void;
   removeRecurring: (id: string) => void;
@@ -125,7 +132,7 @@ type TradingState = {
   pauseAllBots: (venue?: BotVenue) => void;
   updateBot: (id: string, patch: Partial<Pick<Bot, "name" | "sizeQuote" | "params" | "interval">>) => void;
   duplicateBot: (id: string) => Bot | null;
-  syncKraken: () => Promise<{ ok: boolean; message: string }>;
+  syncKraken: (mode?: "light" | "full") => Promise<{ ok: boolean; message: string }>;
   dispatchKrakenFill: (input: {
     botId: string;
     pair: string;
@@ -226,6 +233,9 @@ export const useTradingStore = create<TradingState>()(
       krakenSyncAt: 0,
       krakenError: null,
       liveFills: [],
+      krakenOrders: [],
+      krakenFills: [],
+      krakenPositions: [],
 
       hydrateTickers: (list) => {
         const tickers = { ...get().tickers };
@@ -382,6 +392,42 @@ export const useTradingStore = create<TradingState>()(
         return { ok: true, message: "Ordre placé.", order };
       },
 
+      placeLiveOrder: async (input) => {
+        const { apiKey, apiSecret } = get().connection;
+        if (!apiKey || !apiSecret) return { ok: false, message: "Clés Kraken manquantes." };
+        const ticker = get().tickers[input.pair];
+        const last = ticker?.last ?? input.price ?? 0;
+        const res = await krakenPlaceOrder({
+          data: {
+            apiKey,
+            apiSecret,
+            pair: input.pair,
+            side: input.side,
+            type: input.type,
+            amount: input.amount,
+            price: input.price ?? last,
+            stopPrice: input.stopPrice,
+            leverage: input.leverage,
+            tp: input.tp,
+            sl: input.sl,
+            trailingPct: input.trailingPct,
+            note: input.note,
+          },
+        });
+        if (!res.ok) {
+          toast.message("Kraken a refusé l’ordre", { description: res.message });
+          return { ok: false, message: res.message };
+        }
+        if (res.order) {
+          set({
+            krakenOrders: [res.order, ...get().krakenOrders.filter((o) => o.id !== res.order!.id)].slice(0, 80),
+          });
+        }
+        toast.success("Ordre Kraken", { description: res.message });
+        void get().syncKraken("light");
+        return { ok: true, message: res.message, order: res.order };
+      },
+
       cancelOrder: (id) => {
         const order = get().orders.find((o) => o.id === id && o.status === "open");
         if (!order) return;
@@ -408,6 +454,24 @@ export const useTradingStore = create<TradingState>()(
             o.id === id ? { ...o, status: "cancelled", updatedAt: Date.now() } : o,
           ),
         });
+      },
+
+      cancelLiveOrder: async (id) => {
+        const { apiKey, apiSecret } = get().connection;
+        if (!apiKey || !apiSecret) return { ok: false, message: "Clés Kraken manquantes." };
+        const res = await krakenCancel({ data: { apiKey, apiSecret, txid: id } });
+        if (!res.ok) {
+          toast.message("Annulation refusée", { description: res.message });
+          return res;
+        }
+        set({
+          krakenOrders: get().krakenOrders.map((o) =>
+            o.id === id ? { ...o, status: "cancelled", updatedAt: Date.now() } : o,
+          ),
+        });
+        toast.message("Ordre annulé");
+        void get().syncKraken("light");
+        return res;
       },
 
       closePosition: (id) => {
@@ -443,6 +507,36 @@ export const useTradingStore = create<TradingState>()(
         toast.success("Position clôturée", {
           description: `PnL ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} ${quote}`,
         });
+      },
+
+      closeLivePosition: async (id) => {
+        const pos = get().krakenPositions.find((p) => p.id === id) ?? get().positions.find((p) => p.id === id);
+        if (!pos) return { ok: false, message: "Position introuvable." };
+        const { apiKey, apiSecret } = get().connection;
+        if (!apiKey || !apiSecret) return { ok: false, message: "Clés Kraken manquantes." };
+        const res = await krakenClosePosition({
+          data: {
+            apiKey,
+            apiSecret,
+            id: pos.id,
+            pair: pos.pair,
+            side: pos.side,
+            size: pos.size,
+            leverage: pos.leverage,
+            entry: pos.entry,
+            margin: pos.margin,
+            liqPrice: pos.liqPrice,
+            openedAt: pos.openedAt,
+            peak: pos.peak,
+          },
+        });
+        if (!res.ok) {
+          toast.message("Clôture refusée", { description: res.message });
+          return res;
+        }
+        toast.success("Position clôturée", { description: res.message });
+        void get().syncKraken("light");
+        return res;
       },
 
       addAlert: (alert) => {
@@ -484,6 +578,19 @@ export const useTradingStore = create<TradingState>()(
           description: `${amount} ${from} → ${received.toPrecision(6)} ${to}`,
         });
         return { ok: true, message: "OK" };
+      },
+
+      convertLive: async (from, to, amount) => {
+        const { apiKey, apiSecret } = get().connection;
+        if (!apiKey || !apiSecret) return { ok: false, message: "Clés Kraken manquantes." };
+        const res = await krakenConvert({ data: { apiKey, apiSecret, from, to, amount } });
+        if (!res.ok) {
+          toast.message("Conversion refusée", { description: res.message });
+          return res;
+        }
+        toast.success("Conversion Kraken", { description: res.message });
+        void get().syncKraken("light");
+        return res;
       },
 
       addRecurring: (item) =>
@@ -653,6 +760,19 @@ export const useTradingStore = create<TradingState>()(
           if (!t?.last || !meta) continue;
           const amount = plan.amountQuote / t.last;
           if (amount < meta.ordermin) continue;
+          const live = Boolean(get().connection.apiKey && get().connection.apiSecret);
+          if (live) {
+            plan.nextAt = now + (plan.cadence === "daily" ? 86_400_000 : 604_800_000);
+            changed = true;
+            void get().placeLiveOrder({
+              pair: plan.pair,
+              side: "buy",
+              type: "market",
+              amount,
+              note: "DCA",
+            });
+            continue;
+          }
           const quoteBal = getBal(balances, meta.quote);
           const fee = plan.amountQuote * settings.takerFee;
           if (quoteBal.available < plan.amountQuote + fee) continue;
@@ -740,7 +860,7 @@ export const useTradingStore = create<TradingState>()(
             toast.message("Ajoute tes clés publique et privée Kraken.");
             return { ok: false, message: "Ajoute tes clés publique et privée Kraken." };
           }
-          void get().syncKraken();
+          void get().syncKraken("light");
         }
         if (bot.venue === "live" && !get().tickers[pair] && !get().tickers[bot.pair]) {
           toast.message("Marché indisponible.");
@@ -875,26 +995,49 @@ export const useTradingStore = create<TradingState>()(
         toast.message(venue === "live" ? "Bots réels en pause" : "Bots en pause");
       },
 
-      syncKraken: async () => {
+      syncKraken: async (mode = "full") => {
         const { apiKey, apiSecret } = get().connection;
         if (!apiKey || !apiSecret) {
           const message = "Clés Kraken manquantes.";
           set({ krakenError: message });
           return { ok: false, message };
         }
-        const res = await krakenBalance({ data: { apiKey, apiSecret } });
+        const res = await krakenSnapshot({ data: { apiKey, apiSecret, mode } });
+        if (!res.ok) {
+          const fallback = await krakenBalance({ data: { apiKey, apiSecret } });
+          set({
+            krakenBalances: fallback.balances,
+            krakenEur: fallback.eur,
+            krakenSyncAt: Date.now(),
+            krakenError: fallback.ok ? null : fallback.message,
+          });
+          get().setConnection({
+            testedAt: Date.now(),
+            testOk: fallback.ok,
+            testMessage: fallback.message,
+          });
+          return { ok: fallback.ok, message: fallback.message };
+        }
+        const open = (res.orders ?? []).filter((o) => o.status === "open");
+        const closedKept =
+          mode === "light"
+            ? get().krakenOrders.filter((o) => o.status !== "open")
+            : (res.orders ?? []).filter((o) => o.status !== "open");
         set({
-          krakenBalances: res.balances,
-          krakenEur: res.eur,
+          krakenBalances: res.balances ?? {},
+          krakenEur: res.eur ?? 0,
+          krakenOrders: [...open, ...closedKept].slice(0, 80),
+          krakenFills: mode === "light" ? get().krakenFills : (res.fills ?? []),
+          krakenPositions: res.positions ?? [],
           krakenSyncAt: Date.now(),
-          krakenError: res.ok ? null : res.message,
+          krakenError: null,
         });
         get().setConnection({
           testedAt: Date.now(),
-          testOk: res.ok,
+          testOk: true,
           testMessage: res.message,
         });
-        return { ok: res.ok, message: res.message };
+        return { ok: true, message: res.message };
       },
 
       dispatchKrakenFill: async (input) => {
@@ -1014,7 +1157,7 @@ export const useTradingStore = create<TradingState>()(
           }),
         });
         toast.success("Ordre Kraken", { description: res.message });
-        void get().syncKraken();
+        void get().syncKraken("light");
       },
 
       runBots: () => {
@@ -1245,6 +1388,20 @@ export function eurUsdRate(tickers: Record<string, Ticker>): number {
   const b = tickers.XBTEUR?.last;
   if (a && b) return a / b;
   return 1.08;
+}
+
+export function isLiveConnected(connection: ConnectionConfig): boolean {
+  return Boolean(connection.apiKey && connection.apiSecret);
+}
+
+export function liveBalanceRows(
+  krakenBalances: Record<string, number>,
+  hold: Record<string, number> = {},
+): Balance[] {
+  return Object.entries(krakenBalances)
+    .filter(([, q]) => q > 0)
+    .map(([asset, available]) => ({ asset, available, hold: hold[asset] ?? 0 }))
+    .sort((a, b) => b.available - a.available);
 }
 
 export function usdValue(asset: string, qty: number, tickers: Record<string, Ticker>): number {

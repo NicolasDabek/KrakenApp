@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { formatDateTime, formatPrice, formatQty } from "@/lib/trading/format";
 import { PAIR_BY_ID } from "@/lib/trading/pairs";
 import { downloadCsv } from "@/lib/trading/stats";
-import { useTradingStore } from "@/lib/trading/store";
+import { isLiveConnected, useTradingStore } from "@/lib/trading/store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/orders")({ component: OrdersPage });
@@ -13,12 +13,24 @@ type Tab = "open" | "history" | "fills" | "positions";
 
 function OrdersPage() {
   const [tab, setTab] = useState<Tab>("open");
-  const orders = useTradingStore((s) => s.orders);
-  const fills = useTradingStore((s) => s.fills);
-  const positions = useTradingStore((s) => s.positions);
+  const demoOrders = useTradingStore((s) => s.orders);
+  const demoFills = useTradingStore((s) => s.fills);
+  const demoPositions = useTradingStore((s) => s.positions);
+  const krakenOrders = useTradingStore((s) => s.krakenOrders);
+  const krakenFills = useTradingStore((s) => s.krakenFills);
+  const krakenPositions = useTradingStore((s) => s.krakenPositions);
+  const connection = useTradingStore((s) => s.connection);
+  const live = isLiveConnected(connection);
+  const orders = live ? krakenOrders : demoOrders;
+  const fills = live ? krakenFills : demoFills;
+  const positions = live ? krakenPositions : demoPositions;
   const tickers = useTradingStore((s) => s.tickers);
   const cancelOrder = useTradingStore((s) => s.cancelOrder);
+  const cancelLiveOrder = useTradingStore((s) => s.cancelLiveOrder);
   const closePosition = useTradingStore((s) => s.closePosition);
+  const closeLivePosition = useTradingStore((s) => s.closeLivePosition);
+  const syncKraken = useTradingStore((s) => s.syncKraken);
+  const [busy, setBusy] = useState(false);
 
   const open = orders.filter((o) => o.status === "open");
   const hist = orders.filter((o) => o.status !== "open");
@@ -41,11 +53,26 @@ function OrdersPage() {
     <div className="mx-auto max-w-3xl px-4 py-5">
       <div className="flex items-start justify-between gap-3">
         <h1 className="text-xl font-semibold tracking-tight">Ordres</h1>
-        {fills.length > 0 && (
-          <Button size="sm" variant="outline" onClick={exportFills}>
-            Export CSV
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {live && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void syncKraken().finally(() => setBusy(false));
+              }}
+            >
+              {busy ? "Sync…" : "Synchroniser"}
+            </Button>
+          )}
+          {fills.length > 0 && (
+            <Button size="sm" variant="outline" onClick={exportFills}>
+              Export CSV
+            </Button>
+          )}
+        </div>
       </div>
       <div className="mt-4 flex gap-1 overflow-x-auto">
         {(
@@ -86,7 +113,11 @@ function OrdersPage() {
                   {formatQty(o.amount, 6)} @ {o.price ? formatPrice(o.price, PAIR_BY_ID[o.pair]?.pairDecimals ?? 2) : "marché"}
                 </p>
               </div>
-              <Button size="sm" variant="outline" onClick={() => cancelOrder(o.id)}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => (live ? void cancelLiveOrder(o.id) : cancelOrder(o.id))}
+              >
                 Annuler
               </Button>
             </li>
@@ -117,7 +148,7 @@ function OrdersPage() {
                   Taille {formatQty(p.size, 6)} · Entrée {p.entry} · Liq. {p.liqPrice.toFixed(2)}
                   {p.trailingPct ? ` · trail ${p.trailingPct}%` : ""}
                 </p>
-                <Button size="sm" variant="outline" onClick={() => closePosition(p.id)}>
+                <Button size="sm" variant="outline" onClick={() => (live ? void closeLivePosition(p.id) : closePosition(p.id))}>
                   Clôturer
                 </Button>
               </li>

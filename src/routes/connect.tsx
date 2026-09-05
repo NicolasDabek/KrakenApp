@@ -40,8 +40,6 @@ function ConnectPage() {
       baseUrl,
       apiKey,
       apiSecret,
-      testedAt: Date.now(),
-      testOk: res.ok,
       testMessage: res.message,
     });
     setBusy(false);
@@ -114,22 +112,31 @@ function ConnectPage() {
       </div>
 
       <div className="mt-8 rounded-lg border border-border bg-card p-4 text-sm">
-        <p className="font-medium">Backend perso (optionnel)</p>
-        <p className="mt-1 text-xs text-muted-foreground">Si tu préfères relayer tes propres endpoints plus tard.</p>
+        <p className="font-medium">Backend Nautilus</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Backend intégré /api/v1 : marchés, soldes, ordres, bots, conversion, Earn. Tes clés signent chaque appel et
+          ne sont jamais stockées sur le serveur. Les bots réels tournent tant que l’app est ouverte.
+        </p>
         <label className="mt-3 block space-y-1 text-xs text-muted-foreground">
-          URL backend
+          URL backend (laisser vide = backend intégré)
           <Input
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
-            placeholder="https://api.votre-domaine.com"
+            placeholder="/api/v1"
           />
         </label>
-        <Button variant="outline" className="mt-3 w-full" type="button" onClick={() => void testBackend()} disabled={busy}>
+        <Button
+          variant="outline"
+          className="mt-3 w-full"
+          type="button"
+          onClick={() => void testBackend()}
+          disabled={busy}
+        >
           Tester /health
         </Button>
         <ul className="mt-3 space-y-1.5 font-mono text-xs text-muted-foreground">
           {BACKEND_ENDPOINTS.map((e) => (
-            <li key={e.path}>
+            <li key={`${e.method}-${e.path}`}>
               <span className="text-foreground">{e.method}</span> {e.path}
             </li>
           ))}

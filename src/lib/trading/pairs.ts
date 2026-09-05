@@ -175,6 +175,35 @@ export function backtestFetchInterval(days: number, requested = 15): number {
   return Math.max(requested, covering);
 }
 
+export function resolvePairId(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  if (PAIR_BY_ID[trimmed]) return trimmed;
+  if (PAIR_BY_RESULT[trimmed]) return PAIR_BY_RESULT[trimmed]!.id;
+  const compact = trimmed.replace("/", "").toUpperCase().replace(/^XBT/, "XBT");
+  if (PAIR_BY_ID[compact]) return compact;
+  const swapped = compact.replace(/^XXBT/, "XBT").replace(/ZUSD$/, "USD").replace(/ZEUR$/, "EUR");
+  if (PAIR_BY_ID[swapped]) return swapped;
+  const ws = PAIR_UNIVERSE.find((p) => p.wsname === trimmed || p.wsname.replace("/", "") === compact);
+  if (ws) return ws.id;
+  const asXbt = compact.replace(/^BTC/, "XBT");
+  if (PAIR_BY_ID[asXbt]) return asXbt;
+  const asBtc = compact.replace(/^XBT/, "XBT");
+  if (PAIR_BY_ID[asBtc]) return asBtc;
+  return PAIR_UNIVERSE.find((p) => p.display.replace("/", "") === compact.replace("XBT", "BTC"))?.id;
+}
+
 export function intervalLabel(id: number): string {
   return INTERVALS.find((i) => i.id === id)?.label ?? `${id}m`;
 }
+
+export function pairForAssets(from: string, to: string): { pair: string; side: "buy" | "sell" } | null {
+  const a = from === "BTC" ? "BTC" : from;
+  const b = to === "BTC" ? "BTC" : to;
+  const direct = PAIR_UNIVERSE.find((p) => p.base === a && p.quote === b);
+  if (direct) return { pair: direct.id, side: "sell" };
+  const inv = PAIR_UNIVERSE.find((p) => p.base === b && p.quote === a);
+  if (inv) return { pair: inv.id, side: "buy" };
+  return null;
+}
+

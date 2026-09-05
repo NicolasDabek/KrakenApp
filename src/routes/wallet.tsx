@@ -5,19 +5,26 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { formatFiat, formatPct, formatQty } from "@/lib/trading/format";
+import { krakenDeposit } from "@/lib/trading/functions";
 import { PAIR_BY_ID } from "@/lib/trading/pairs";
-import { usdValue, useTradingStore } from "@/lib/trading/store";
+import { usdValue, isLiveConnected, liveBalanceRows, useTradingStore } from "@/lib/trading/store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/wallet")({ component: WalletPage });
 
 function WalletPage() {
-  const balances = useTradingStore((s) => s.balances);
+  const demoBalances = useTradingStore((s) => s.balances);
+  const krakenBalances = useTradingStore((s) => s.krakenBalances);
+  const connection = useTradingStore((s) => s.connection);
+  const live = isLiveConnected(connection);
+  const balances = live ? liveBalanceRows(krakenBalances) : demoBalances;
   const tickers = useTradingStore((s) => s.tickers);
   const quote = useTradingStore((s) => s.settings.displayQuote);
   const [sheet, setSheet] = useState<"in" | "out" | null>(null);
   const [asset, setAsset] = useState("BTC");
   const [amount, setAmount] = useState("");
+  const [deposit, setDeposit] = useState<string | null>(null);
+  const [depositBusy, setDepositBusy] = useState(false);
 
   const rows = useMemo(() => {
     return balances
@@ -51,7 +58,7 @@ function WalletPage() {
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <Badge tone="warn">Démo</Badge>
+          <Badge tone={live ? "buy" : "warn"}>{live ? "Kraken" : "Démo"}</Badge>
           <AllocRing
             slices={rows.map((r) => ({
               id: r.asset,
@@ -115,7 +122,11 @@ function WalletPage() {
         <Sheet title={sheet === "in" ? "Dépôt" : "Retrait"} onClose={() => setSheet(null)}>
           <div className="space-y-3 px-4 pb-5">
             <p className="text-sm text-muted-foreground">
-              Simulation locale. Les vrais flux on-chain arriveront avec votre backend.
+              {live
+                ? sheet === "in"
+                  ? "Adresse générée via l’API Kraken DepositAddresses."
+                  : "Les retraits on-chain restent sur Kraken.com (droit Withdrawal non utilisé ici)."
+                : "Simulation locale. Connecte tes clés pour une adresse de dépôt réelle."}
             </p>
             <Input value={asset} onChange={(e) => setAsset(e.target.value.toUpperCase())} placeholder="Actif" />
             {sheet === "out" && (
@@ -123,11 +134,30 @@ function WalletPage() {
             )}
             {sheet === "in" && (
               <div className="rounded-md bg-muted p-3 font-mono text-xs leading-relaxed text-muted-foreground">
-                nautilus-demo-{asset.toLowerCase()}-0x7c91e4a2b8d4f6
+                {deposit ?? (live ? "Appuie pour demander l’adresse Kraken" : `nautilus-demo-${asset.toLowerCase()}`)}
               </div>
             )}
-            <Button className="w-full" onClick={() => setSheet(null)}>
-              {sheet === "in" ? "J’ai compris" : "Simuler le retrait"}
+            <Button
+              className="w-full"
+              disabled={depositBusy}
+              onClick={() => {
+                if (sheet === "out") {
+                  setSheet(null);
+                  return;
+                }
+                if (!live) {
+                  setSheet(null);
+                  return;
+                }
+                setDepositBusy(true);
+                void krakenDeposit({ data: { apiKey: connection.apiKey, apiSecret: connection.apiSecret, asset } })
+                  .then((res) => {
+                    setDeposit(res.ok && res.info ? `${res.info.method} · ${res.info.address}${res.info.tag ? ` · tag ${res.info.tag}` : ""}` : res.message);
+                  })
+                  .finally(() => setDepositBusy(false));
+              }}
+            >
+              {sheet === "in" ? (live ? (depositBusy ? "…" : "Obtenir l’adresse") : "J’ai compris") : "Fermer"}
             </Button>
           </div>
         </Sheet>

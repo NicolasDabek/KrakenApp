@@ -65,7 +65,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 : { to: item.to };
             return (
               <Link
-                key={item.label}
+                key={`desk-${item.label}`}
                 {...dest}
                 className={cn(
                   "flex flex-col items-center gap-1 rounded-md px-2 py-2.5 text-xs font-medium transition-colors duration-150",
@@ -100,7 +100,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 : { to: item.to };
             return (
               <Link
-                key={item.label}
+                key={`tab-${item.label}`}
                 {...dest}
                 className={cn(
                   "flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors duration-150",

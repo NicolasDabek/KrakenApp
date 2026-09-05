@@ -4,27 +4,32 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDateTime, formatFiat } from "@/lib/trading/format";
-import { PAIR_BY_ID, PAIR_UNIVERSE } from "@/lib/trading/pairs";
-import { useTradingStore } from "@/lib/trading/store";
+import { EUR_PAIRS, PAIR_BY_ID, PAIR_UNIVERSE, toEurPair } from "@/lib/trading/pairs";
+import { isLiveConnected, useTradingStore } from "@/lib/trading/store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/dca")({ component: DcaPage });
 
 function DcaPage() {
   const lastPair = useTradingStore((s) => s.lastPair);
+  const connection = useTradingStore((s) => s.connection);
+  const live = isLiveConnected(connection);
   const recurring = useTradingStore((s) => s.recurring);
   const addRecurring = useTradingStore((s) => s.addRecurring);
   const toggleRecurring = useTradingStore((s) => s.toggleRecurring);
   const removeRecurring = useTradingStore((s) => s.removeRecurring);
-  const [pair, setPair] = useState(lastPair);
+  const [pair, setPair] = useState(live ? toEurPair(lastPair) : lastPair);
   const [amount, setAmount] = useState("50");
   const [cadence, setCadence] = useState<"daily" | "weekly">("daily");
 
-  const usdPairs = PAIR_UNIVERSE.filter((p) => p.quote === "USD");
+  const pairs = live ? EUR_PAIRS : PAIR_UNIVERSE.filter((p) => p.quote === "USD");
 
   return (
     <div className="mx-auto max-w-xl px-4 py-5">
-      <PageHeader title="Achats récurrents" kicker="DCA démo contre le dernier prix Kraken" />
+      <PageHeader
+        title="Achats récurrents"
+        kicker={live ? "DCA réel : ordre marché Kraken à l’échéance" : "DCA démo contre le dernier prix Kraken"}
+      />
       <form
         className="space-y-3 rounded-lg border border-border bg-card p-4"
         onSubmit={(e) => {
@@ -47,7 +52,7 @@ function DcaPage() {
             onChange={(e) => setPair(e.target.value)}
             className="mt-1 h-11 w-full rounded-md border border-border bg-muted px-3 text-sm text-foreground"
           >
-            {usdPairs.map((p) => (
+            {pairs.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.display}
               </option>

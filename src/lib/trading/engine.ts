@@ -1,11 +1,12 @@
 import { useEffect } from "react";
 import { fetchDepth, fetchTape, fetchTickers } from "./functions";
-import { useTradingStore } from "./store";
+import { isLiveConnected, useTradingStore } from "./store";
 
 export function useTickerEngine() {
   useEffect(() => {
     void useTradingStore.persist.rehydrate();
     let cancelled = false;
+    let ticks = 0;
 
     const pull = async () => {
       try {
@@ -23,11 +24,25 @@ export function useTickerEngine() {
       }
     };
 
+    const syncAccount = async () => {
+      const conn = useTradingStore.getState().connection;
+      if (!isLiveConnected(conn)) return;
+      ticks += 1;
+      try {
+        await useTradingStore.getState().syncKraken(ticks % 4 === 1 ? "full" : "light");
+      } catch {
+        /* keep last snapshot */
+      }
+    };
+
     void pull();
+    void syncAccount();
     const id = window.setInterval(() => void pull(), 2200);
+    const acc = window.setInterval(() => void syncAccount(), 22_000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      window.clearInterval(acc);
     };
   }, []);
 }

@@ -27,7 +27,10 @@ export function TradeForm({
   const meta = PAIR_BY_ID[pair];
   const ticker = useTradingStore((s) => s.tickers[pair]);
   const balances = useTradingStore((s) => s.balances);
+  const krakenBalances = useTradingStore((s) => s.krakenBalances);
+  const connection = useTradingStore((s) => s.connection);
   const placeOrder = useTradingStore((s) => s.placeOrder);
+  const placeLiveOrder = useTradingStore((s) => s.placeLiveOrder);
   const confirm = useTradingStore((s) => s.settings.confirmOrders);
   const [side, setSide] = useState<OrderSide>(forcedSide ?? "buy");
   const [type, setType] = useState<OrderType>("market");
@@ -47,8 +50,13 @@ export function TradeForm({
   const px = type === "market" ? last : Number(price) || seedPrice || last;
   const qty = Number(amount) || 0;
 
-  const baseBal = balances.find((b) => b.asset === meta?.base)?.available ?? 0;
-  const quoteBal = balances.find((b) => b.asset === meta?.quote)?.available ?? 0;
+  const live = Boolean(connection.apiKey && connection.apiSecret);
+  const baseBal = live
+    ? (krakenBalances[meta?.base ?? ""] ?? 0)
+    : (balances.find((b) => b.asset === meta?.base)?.available ?? 0);
+  const quoteBal = live
+    ? (krakenBalances[meta?.quote ?? ""] ?? 0)
+    : (balances.find((b) => b.asset === meta?.quote)?.available ?? 0);
   const available = activeSide === "buy" ? quoteBal : baseBal;
 
   const total = qty * px;
@@ -83,8 +91,15 @@ export function TradeForm({
     trailingPct: Number(trail) || undefined,
   };
 
-  const send = () => {
+  const send = async () => {
     setError(null);
+    if (live) {
+      const res = await placeLiveOrder(payload);
+      if (!res.ok) setError(res.message);
+      else setAmount("");
+      setPending(false);
+      return;
+    }
     const res = placeOrder(payload);
     if (!res.ok) setError(res.message);
     else setAmount("");
@@ -265,7 +280,9 @@ export function TradeForm({
         <Button type="submit" variant={activeSide === "buy" ? "buy" : "sell"} className="w-full" size="lg">
           {activeSide === "buy" ? "Acheter" : "Vendre"} {meta?.base}
         </Button>
-        <p className="text-center text-xs text-subtle">Mode démo — exécution locale contre le prix Kraken</p>
+        <p className="text-center text-xs text-subtle">
+          {live ? "Ordre envoyé sur Kraken (clés de cet appareil)" : "Mode démo — exécution locale contre le prix Kraken"}
+        </p>
       </form>
 
       {pending && (
@@ -282,7 +299,7 @@ export function TradeForm({
               <Button variant="outline" onClick={() => setPending(false)}>
                 Annuler
               </Button>
-              <Button variant={activeSide === "buy" ? "buy" : "sell"} onClick={send}>
+              <Button variant={activeSide === "buy" ? "buy" : "sell"} onClick={() => void send()}>
                 Confirmer
               </Button>
             </div>

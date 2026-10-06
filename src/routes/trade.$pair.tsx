@@ -1,19 +1,22 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronDown, Star, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { MarketList } from "@/components/markets/market-list";
 import { CandleChart } from "@/components/trade/candle-chart";
 import { DepthChart } from "@/components/trade/depth-chart";
-import { OrderBook } from "@/components/trade/order-book";
+import { BookRangePicker, OrderBook } from "@/components/trade/order-book";
 import { TradeForm } from "@/components/trade/trade-form";
 import { TradesTape } from "@/components/trade/trades-tape";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useBookEngine } from "@/lib/trading/engine";
 import { formatPct, formatPrice } from "@/lib/trading/format";
-import { DEFAULT_PAIR, PAIR_BY_ID } from "@/lib/trading/pairs";
+import type { BookRangePct } from "@/lib/trading/book-range";
+import { defaultParams, defaultSize, gridChartLevels } from "@/lib/trading/bots";
+import { DEFAULT_PAIR, PAIR_BY_ID, toEurPair } from "@/lib/trading/pairs";
 import { biasTone, marketSignal } from "@/lib/trading/signals";
-import { useTradingStore } from "@/lib/trading/store";
+import { isLiveConnected, useTradingStore } from "@/lib/trading/store";
 import type { OrderSide } from "@/lib/trading/types";
 import { cn } from "@/lib/utils";
 
@@ -29,10 +32,22 @@ function TradePage() {
   const ticker = useTradingStore((s) => s.tickers[pair]);
   const watchlist = useTradingStore((s) => s.watchlist);
   const toggleWatch = useTradingStore((s) => s.toggleWatch);
+  const connection = useTradingStore((s) => s.connection);
+  const bots = useTradingStore((s) => s.bots);
+  const paperFee = useTradingStore((s) => s.paper.feeRate);
+  const liveFee = useTradingStore((s) => s.settings.takerFee);
+  const pairBots = bots.filter((b) => b.pair === pair && b.status === "running");
+  const gridBot =
+    pairBots.find((b) => b.kind === "grid") ?? bots.find((b) => b.pair === pair && b.kind === "grid");
+  const gridLevels = gridBot
+    ? gridChartLevels(gridBot, gridBot.venue === "live" ? liveFee : paperFee)
+    : undefined;
+  const liveKeys = isLiveConnected(connection);
   const [panel, setPanel] = useState<Panel>("book");
   const [picker, setPicker] = useState(false);
   const [ticket, setTicket] = useState<OrderSide | null>(null);
   const [seed, setSeed] = useState<number | undefined>();
+  const [rangePct, setRangePct] = useState<BookRangePct>(5);
 
   useBookEngine(pair, true);
   useEffect(() => {
@@ -105,9 +120,34 @@ function TradePage() {
               {sig.reasons[0] && <span className="text-subtle">{sig.reasons[0]}</span>}
             </>
           )}
+          {pairBots.length > 0 && (
+            <Link to="/bot" className="text-accent">
+              {pairBots.length} bot{pairBots.length > 1 ? "s" : ""} actif{pairBots.length > 1 ? "s" : ""}
+            </Link>
+          )}
+          {PAIR_BY_ID[pair]?.quote === "EUR" && (
+            <button
+              type="button"
+              className="text-accent"
+              onClick={() => {
+                const last = useTradingStore.getState().tickers[pair]?.last || 100;
+                const bot = useTradingStore.getState().createBot({
+                  kind: "grid",
+                  venue: liveKeys ? "live" : "paper",
+                  pair: toEurPair(pair),
+                  interval: 15,
+                  sizeQuote: defaultSize("grid"),
+                  params: defaultParams("grid", last),
+                });
+                toast.message(`${bot.name} créé`, { description: "Ouvre Bots pour le lancer." });
+              }}
+            >
+              Grille sur cette paire
+            </button>
+          )}
         </div>
 
-        <CandleChart pair={pair} />
+        <CandleChart pair={pair} levels={gridLevels} />
 
         <div className="flex gap-1 overflow-x-auto border-t border-border px-3 py-2 lg:hidden">
           {(
@@ -131,22 +171,31 @@ function TradePage() {
           ))}
         </div>
 
-        <div className="pb-20 lg:hidden">
-          {panel === "book" && <OrderBook pair={pair} onPrice={setSeed} />}
+        {(panel === "book" || panel === "depth") && (
+          <div className="border-b border-border px-3 py-2 lg:hidden">
+            <BookRangePicker value={rangePct} onChange={setRangePct} />
+          </div>
+        )}
+
+        <div className="pb-32 lg:hidden">
+          {panel === "book" && <OrderBook pair={pair} rangePct={rangePct} onPrice={setSeed} />}
           {panel === "tape" && <TradesTape pair={pair} />}
           {panel === "depth" && (
             <div className="p-3">
-              <DepthChart pair={pair} />
+              <DepthChart pair={pair} rangePct={rangePct} />
             </div>
           )}
         </div>
 
-        <div className="mt-4 hidden gap-4 px-4 pb-6 lg:grid lg:grid-cols-2">
+        <div className="mt-4 hidden px-4 lg:block">
+          <BookRangePicker value={rangePct} onChange={setRangePct} />
+        </div>
+        <div className="mt-3 hidden gap-4 px-4 pb-6 lg:grid lg:grid-cols-2">
           <div className="rounded-lg border border-border">
             <p className="border-b border-border px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Carnet
+              Carnet ±{rangePct} %
             </p>
-            <OrderBook pair={pair} onPrice={setSeed} />
+            <OrderBook pair={pair} rangePct={rangePct} onPrice={setSeed} />
           </div>
           <div className="rounded-lg border border-border">
             <p className="border-b border-border px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -154,8 +203,10 @@ function TradePage() {
             </p>
             <TradesTape pair={pair} />
             <div className="border-t border-border p-3">
-              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Profondeur</p>
-              <DepthChart pair={pair} />
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Profondeur ±{rangePct} %
+              </p>
+              <DepthChart pair={pair} rangePct={rangePct} />
             </div>
           </div>
         </div>
@@ -164,7 +215,7 @@ function TradePage() {
       <aside className="hidden border-l border-border lg:block">
         <div className="flex items-center justify-between px-4 pt-4">
           <p className="text-sm font-medium">Ticket</p>
-          <Badge tone="warn">Démo</Badge>
+          <Badge tone={liveKeys ? "buy" : "warn"}>{liveKeys ? "Kraken" : "Démo"}</Badge>
         </div>
         <TradeForm pair={pair} seedPrice={seed} />
       </aside>

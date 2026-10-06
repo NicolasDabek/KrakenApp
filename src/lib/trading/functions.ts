@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { EMPTY_STATS, evaluateBot } from "./bots";
+import { EMPTY_STATS, evaluateBot } from "./bots.ts";
 import {
   allocateEarn,
   cancelKrakenOrder,
@@ -11,11 +11,13 @@ import {
   fetchDepositAddress,
   fetchEarn,
   fetchEarnStrategies,
+  fetchKrakenLedgers,
   fetchOpenOrders,
   placeKrakenOrder,
-} from "./kraken-account.server";
-import { callKrakenPrivate, parseKrakenBalances } from "./kraken-private.server";
-import { getDepth, getOhlc, getOhlcHistory, getTickers, getTrades, pingKraken } from "./kraken.server";
+  queryKrakenOrder,
+} from "./kraken-account.server.ts";
+import { callKrakenPrivate, parseKrakenBalances } from "./kraken-private.server.ts";
+import { getDepth, getOhlc, getOhlcHistory, getTickers, getTrades, pingKraken } from "./kraken.server.ts";
 import type { Bot, BotKind, BotParams, BotRuntime, Candle, NewOrderInput, Position, Ticker } from "./types";
 
 export const fetchTickers = createServerFn({ method: "GET" }).handler(async () => {
@@ -70,6 +72,12 @@ export const krakenSnapshot = createServerFn({ method: "POST" })
     return fetchAccountSnapshot(data, data.mode ?? "full");
   });
 
+export const krakenLedgers = createServerFn({ method: "POST" })
+  .validator(KrakenAuth)
+  .handler(async ({ data }) => {
+    return fetchKrakenLedgers(data);
+  });
+
 export const krakenAddOrder = createServerFn({ method: "POST" })
   .validator(
     KrakenAuth.extend({
@@ -100,6 +108,14 @@ export const krakenAddOrder = createServerFn({ method: "POST" })
       message: res.result?.descr?.order ?? (data.validate ? "Ordre valide (non envoyé)" : "Ordre Kraken envoyé"),
       txid: res.result?.txid?.[0],
     };
+  });
+
+export const krakenQueryOrder = createServerFn({ method: "POST" })
+  .validator(KrakenAuth.extend({ txid: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const order = await queryKrakenOrder({ apiKey: data.apiKey, apiSecret: data.apiSecret }, data.txid);
+    if (!order) return { ok: false as const, message: "Ordre introuvable", order: undefined };
+    return { ok: true as const, message: "OK", order };
   });
 
 const PlaceBody = KrakenAuth.extend({
@@ -241,6 +257,10 @@ const BotKindSchema = z.enum([
   "psar",
   "sma",
   "ha",
+  "mfi",
+  "engulf",
+  "obv",
+  "div",
 ]);
 
 export const krakenEvaluateBot = createServerFn({ method: "POST" })
@@ -303,6 +323,7 @@ export const krakenEvaluateBot = createServerFn({ method: "POST" })
       ticker: data.ticker as Ticker,
       candles: data.candles as Candle[] | undefined,
       equity: data.equity,
+      closedOnly: true,
     });
     return { ok: true as const, message: result.note, fills: result.fills, runtime: result.runtime };
   });

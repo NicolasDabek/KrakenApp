@@ -3,7 +3,7 @@ import { useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatDateTime, formatFiat } from "@/lib/trading/format";
+import { formatDateTime, formatFiat, parseDecimal } from "@/lib/trading/format";
 import { EUR_PAIRS, PAIR_BY_ID, PAIR_UNIVERSE, toEurPair } from "@/lib/trading/pairs";
 import { isLiveConnected, useTradingStore } from "@/lib/trading/store";
 import { cn } from "@/lib/utils";
@@ -34,8 +34,8 @@ function DcaPage() {
         className="space-y-3 rounded-lg border border-border bg-card p-4"
         onSubmit={(e) => {
           e.preventDefault();
-          const n = Number(amount);
-          if (!(n > 0)) return;
+          const n = parseDecimal(amount);
+          if (!(n && n > 0)) return;
           addRecurring({
             pair,
             amountQuote: n,

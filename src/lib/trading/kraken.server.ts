@@ -1,4 +1,4 @@
-import { backtestFetchInterval, PAIR_BY_ID, PAIR_BY_RESULT, TICKER_QUERY } from "./pairs";
+import { backtestFetchInterval, PAIR_BY_ID, PAIR_BY_RESULT, TICKER_QUERY } from "./pairs.ts";
 import type { BookLevel, Candle, OrderBook, TapeTrade, Ticker } from "./types";
 
 const KRAKEN = "https://api.kraken.com/0/public";
@@ -78,10 +78,15 @@ export async function getTickers(): Promise<Ticker[]> {
   return parseTickers(raw);
 }
 
+const OHLC_INTERVALS = new Set([1, 5, 15, 30, 60, 240, 1440, 10080, 21600]);
+
 export async function getOhlc(pair: string, interval: number, since?: number): Promise<Candle[]> {
+  const meta = PAIR_BY_ID[pair] ?? PAIR_BY_RESULT[pair];
+  const krakenPair = meta?.id ?? pair;
+  const iv = OHLC_INTERVALS.has(interval) ? interval : 60;
   const extra = since && since > 0 ? `&since=${since}` : "";
   const raw = await kraken<Record<string, unknown[][] | number>>(
-    `OHLC?pair=${encodeURIComponent(pair)}&interval=${interval}${extra}`,
+    `OHLC?pair=${encodeURIComponent(krakenPair)}&interval=${iv}${extra}`,
     since ? 20_000 : 8000,
   );
   const rows = Object.values(raw).find((v) => Array.isArray(v) && Array.isArray(v[0])) ?? [];
@@ -129,7 +134,7 @@ function levels(rows: string[][], side: "bid" | "ask"): BookLevel[] {
 
 export async function getDepth(pair: string): Promise<OrderBook> {
   const raw = await kraken<Record<string, { bids: string[][]; asks: string[][] }>>(
-    `Depth?pair=${encodeURIComponent(pair)}&count=24`,
+    `Depth?pair=${encodeURIComponent(pair)}&count=500`,
     1200,
   );
   const book = Object.values(raw)[0] ?? { bids: [], asks: [] };

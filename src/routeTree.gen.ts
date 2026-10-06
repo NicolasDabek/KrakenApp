@@ -12,12 +12,14 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as ArbRouteImport } from './routes/arb'
+import { Route as BilanRouteImport } from './routes/bilan'
 import { Route as BotRouteImport } from './routes/bot'
 import { Route as CalculatorRouteImport } from './routes/calculator'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ConvertRouteImport } from './routes/convert'
 import { Route as CorrelationRouteImport } from './routes/correlation'
 import { Route as DcaRouteImport } from './routes/dca'
+import { Route as FiscalRouteImport } from './routes/fiscal'
 import { Route as HeatmapRouteImport } from './routes/heatmap'
 import { Route as JournalRouteImport } from './routes/journal'
 import { Route as OrdersRouteImport } from './routes/orders'
@@ -28,6 +30,7 @@ import { Route as StakingRouteImport } from './routes/staking'
 import { Route as ToolsRouteImport } from './routes/tools'
 import { Route as WalletRouteImport } from './routes/wallet'
 import { Route as TradePairRouteImport } from './routes/trade.$pair'
+import { Route as ApiV1SplatRouteImport } from './routes/api/v1.$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -42,6 +45,11 @@ const AlertsRoute = AlertsRouteImport.update({
 const ArbRoute = ArbRouteImport.update({
   id: '/arb',
   path: '/arb',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BilanRoute = BilanRouteImport.update({
+  id: '/bilan',
+  path: '/bilan',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BotRoute = BotRouteImport.update({
@@ -72,6 +80,11 @@ const CorrelationRoute = CorrelationRouteImport.update({
 const DcaRoute = DcaRouteImport.update({
   id: '/dca',
   path: '/dca',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FiscalRoute = FiscalRouteImport.update({
+  id: '/fiscal',
+  path: '/fiscal',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HeatmapRoute = HeatmapRouteImport.update({
@@ -124,17 +137,24 @@ const TradePairRoute = TradePairRouteImport.update({
   path: '/trade/$pair',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiV1SplatRoute = ApiV1SplatRouteImport.update({
+  id: '/api/v1/$',
+  path: '/api/v1/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/arb': typeof ArbRoute
+  '/bilan': typeof BilanRoute
   '/bot': typeof BotRoute
   '/calculator': typeof CalculatorRoute
   '/connect': typeof ConnectRoute
   '/convert': typeof ConvertRoute
   '/correlation': typeof CorrelationRoute
   '/dca': typeof DcaRoute
+  '/fiscal': typeof FiscalRoute
   '/heatmap': typeof HeatmapRoute
   '/journal': typeof JournalRoute
   '/orders': typeof OrdersRoute
@@ -145,17 +165,20 @@ export interface FileRoutesByFullPath {
   '/tools': typeof ToolsRoute
   '/wallet': typeof WalletRoute
   '/trade/$pair': typeof TradePairRoute
+  '/api/v1/$': typeof ApiV1SplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/arb': typeof ArbRoute
+  '/bilan': typeof BilanRoute
   '/bot': typeof BotRoute
   '/calculator': typeof CalculatorRoute
   '/connect': typeof ConnectRoute
   '/convert': typeof ConvertRoute
   '/correlation': typeof CorrelationRoute
   '/dca': typeof DcaRoute
+  '/fiscal': typeof FiscalRoute
   '/heatmap': typeof HeatmapRoute
   '/journal': typeof JournalRoute
   '/orders': typeof OrdersRoute
@@ -166,18 +189,21 @@ export interface FileRoutesByTo {
   '/tools': typeof ToolsRoute
   '/wallet': typeof WalletRoute
   '/trade/$pair': typeof TradePairRoute
+  '/api/v1/$': typeof ApiV1SplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
   '/arb': typeof ArbRoute
+  '/bilan': typeof BilanRoute
   '/bot': typeof BotRoute
   '/calculator': typeof CalculatorRoute
   '/connect': typeof ConnectRoute
   '/convert': typeof ConvertRoute
   '/correlation': typeof CorrelationRoute
   '/dca': typeof DcaRoute
+  '/fiscal': typeof FiscalRoute
   '/heatmap': typeof HeatmapRoute
   '/journal': typeof JournalRoute
   '/orders': typeof OrdersRoute
@@ -188,6 +214,7 @@ export interface FileRoutesById {
   '/tools': typeof ToolsRoute
   '/wallet': typeof WalletRoute
   '/trade/$pair': typeof TradePairRoute
+  '/api/v1/$': typeof ApiV1SplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -195,12 +222,14 @@ export interface FileRouteTypes {
     | '/'
     | '/alerts'
     | '/arb'
+    | '/bilan'
     | '/bot'
     | '/calculator'
     | '/connect'
     | '/convert'
     | '/correlation'
     | '/dca'
+    | '/fiscal'
     | '/heatmap'
     | '/journal'
     | '/orders'
@@ -211,17 +240,20 @@ export interface FileRouteTypes {
     | '/tools'
     | '/wallet'
     | '/trade/$pair'
+    | '/api/v1/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/alerts'
     | '/arb'
+    | '/bilan'
     | '/bot'
     | '/calculator'
     | '/connect'
     | '/convert'
     | '/correlation'
     | '/dca'
+    | '/fiscal'
     | '/heatmap'
     | '/journal'
     | '/orders'
@@ -232,17 +264,20 @@ export interface FileRouteTypes {
     | '/tools'
     | '/wallet'
     | '/trade/$pair'
+    | '/api/v1/$'
   id:
     | '__root__'
     | '/'
     | '/alerts'
     | '/arb'
+    | '/bilan'
     | '/bot'
     | '/calculator'
     | '/connect'
     | '/convert'
     | '/correlation'
     | '/dca'
+    | '/fiscal'
     | '/heatmap'
     | '/journal'
     | '/orders'
@@ -253,18 +288,21 @@ export interface FileRouteTypes {
     | '/tools'
     | '/wallet'
     | '/trade/$pair'
+    | '/api/v1/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AlertsRoute: typeof AlertsRoute
   ArbRoute: typeof ArbRoute
+  BilanRoute: typeof BilanRoute
   BotRoute: typeof BotRoute
   CalculatorRoute: typeof CalculatorRoute
   ConnectRoute: typeof ConnectRoute
   ConvertRoute: typeof ConvertRoute
   CorrelationRoute: typeof CorrelationRoute
   DcaRoute: typeof DcaRoute
+  FiscalRoute: typeof FiscalRoute
   HeatmapRoute: typeof HeatmapRoute
   JournalRoute: typeof JournalRoute
   OrdersRoute: typeof OrdersRoute
@@ -275,6 +313,7 @@ export interface RootRouteChildren {
   ToolsRoute: typeof ToolsRoute
   WalletRoute: typeof WalletRoute
   TradePairRoute: typeof TradePairRoute
+  ApiV1SplatRoute: typeof ApiV1SplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -298,6 +337,13 @@ declare module '@tanstack/react-router' {
       path: '/arb'
       fullPath: '/arb'
       preLoaderRoute: typeof ArbRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bilan': {
+      id: '/bilan'
+      path: '/bilan'
+      fullPath: '/bilan'
+      preLoaderRoute: typeof BilanRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/bot': {
@@ -340,6 +386,13 @@ declare module '@tanstack/react-router' {
       path: '/dca'
       fullPath: '/dca'
       preLoaderRoute: typeof DcaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/fiscal': {
+      id: '/fiscal'
+      path: '/fiscal'
+      fullPath: '/fiscal'
+      preLoaderRoute: typeof FiscalRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/heatmap': {
@@ -412,6 +465,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TradePairRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/v1/$': {
+      id: '/api/v1/$'
+      path: '/api/v1/$'
+      fullPath: '/api/v1/$'
+      preLoaderRoute: typeof ApiV1SplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -419,12 +479,14 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AlertsRoute: AlertsRoute,
   ArbRoute: ArbRoute,
+  BilanRoute: BilanRoute,
   BotRoute: BotRoute,
   CalculatorRoute: CalculatorRoute,
   ConnectRoute: ConnectRoute,
   ConvertRoute: ConvertRoute,
   CorrelationRoute: CorrelationRoute,
   DcaRoute: DcaRoute,
+  FiscalRoute: FiscalRoute,
   HeatmapRoute: HeatmapRoute,
   JournalRoute: JournalRoute,
   OrdersRoute: OrdersRoute,
@@ -435,6 +497,7 @@ const rootRouteChildren: RootRouteChildren = {
   ToolsRoute: ToolsRoute,
   WalletRoute: WalletRoute,
   TradePairRoute: TradePairRoute,
+  ApiV1SplatRoute: ApiV1SplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

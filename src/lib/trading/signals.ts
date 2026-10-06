@@ -1,5 +1,5 @@
-import { PAIR_BY_ID } from "./pairs";
-import { rangePosition } from "./stats";
+import { PAIR_BY_ID } from "./pairs.ts";
+import { rangePosition } from "./stats.ts";
 import type { Ticker } from "./types";
 
 export type Bias = "buy" | "sell" | "wait";

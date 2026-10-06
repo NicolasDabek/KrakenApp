@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { fetchDepth, fetchTape, fetchTickers } from "./functions";
-import { isLiveConnected, useTradingStore } from "./store";
+import { fetchDepth, fetchTape, fetchTickers } from "./functions.ts";
+import { isLiveConnected, useTradingStore } from "./store.ts";
 
 export function useTickerEngine() {
   useEffect(() => {

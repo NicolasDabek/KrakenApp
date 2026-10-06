@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { IChartApi, ISeriesApi, UTCTimestamp } from "lightweight-charts";
+import type { IChartApi, IPriceLine, ISeriesApi, UTCTimestamp } from "lightweight-charts";
 import { fetchOhlc } from "@/lib/trading/functions";
 import { atr, bollinger, ema, macd, rsi, stochastic, vwap, type IndicatorId } from "@/lib/trading/indicators";
+import type { GridChartLevel } from "@/lib/trading/bots";
 import { INTERVALS, PAIR_BY_ID, type IntervalId } from "@/lib/trading/pairs";
 import { useTradingStore } from "@/lib/trading/store";
 import type { Candle } from "@/lib/trading/types";
@@ -23,9 +24,31 @@ type SeriesBag = {
   sub?: IChartApi;
   candle: ISeriesApi<"Candlestick">;
   vol: ISeriesApi<"Histogram">;
+  lines: IPriceLine[];
 };
 
-export function CandleChart({ pair }: { pair: string }) {
+const LEVEL_COLOR: Record<GridChartLevel["kind"], string> = {
+  buy: "#2FBE8F",
+  sell: "#E85D6C",
+  entry: "#5B8CFF",
+  band: "#8B929E",
+};
+
+function paintLevels(series: ISeriesApi<"Candlestick">, bag: SeriesBag, levels: GridChartLevel[] | undefined) {
+  for (const line of bag.lines) series.removePriceLine(line);
+  bag.lines = (levels ?? []).map((lv) =>
+    series.createPriceLine({
+      price: lv.price,
+      color: LEVEL_COLOR[lv.kind],
+      lineWidth: lv.kind === "band" ? 1 : 2,
+      lineStyle: lv.kind === "band" ? 2 : 0,
+      axisLabelVisible: true,
+      title: lv.title,
+    }),
+  );
+}
+
+export function CandleChart({ pair, levels }: { pair: string; levels?: GridChartLevel[] }) {
   const [interval, setIntervalId] = useState<IntervalId>(60);
   const [indicator, setIndicator] = useState<IndicatorId>("ema");
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -35,6 +58,8 @@ export function CandleChart({ pair }: { pair: string }) {
   const bag = useRef<SeriesBag | null>(null);
   const candlesRef = useRef<Candle[]>([]);
   const last = useTradingStore((s) => s.tickers[pair]?.last);
+  const levelsRef = useRef(levels);
+  levelsRef.current = levels;
 
   useEffect(() => {
     candlesRef.current = candles;
@@ -224,7 +249,8 @@ export function CandleChart({ pair }: { pair: string }) {
       }
 
       created.timeScale().fitContent();
-      bag.current = { chart: created, sub: subChart, candle: candleSeries, vol };
+      bag.current = { chart: created, sub: subChart, candle: candleSeries, vol, lines: [] };
+      paintLevels(candleSeries, bag.current, levelsRef.current);
       ro.observe(node);
     })();
 
@@ -273,6 +299,12 @@ export function CandleChart({ pair }: { pair: string }) {
       /* series not ready */
     }
   }, [last, interval]);
+
+  useEffect(() => {
+    const node = bag.current;
+    if (!node) return;
+    paintLevels(node.candle, node, levels);
+  }, [levels]);
 
   const pane = indicator === "rsi" || indicator === "macd" || indicator === "atr" || indicator === "stoch";
   const meta = PAIR_BY_ID[pair];

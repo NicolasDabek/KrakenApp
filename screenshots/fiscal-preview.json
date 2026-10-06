@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/fiscal",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 1723,
+      "bodyTextHash": "e3cb5e601b60c231eae723a20214c2e6ddffd8870529882f50a0109084549337",
+      "bodyTextPrefix": "Marchés Trade Bot Compte Ordres Outils OFF Impôts Plus-values d’",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/fiscal-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 1733,
+      "bodyTextHash": "5b042708c8d96bde6da00e96b3126daafc5bc7affa2a20daa0bcb6d0a445bccc",
+      "bodyTextPrefix": "Nautilus LIVE Impôts Plus-values d’actifs numériques, méthode du",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/fiscal-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/fiscal-preview.json"
+}

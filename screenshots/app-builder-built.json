@@ -7,9 +7,9 @@
       "status": 200,
       "title": "Nautilus",
       "hasCanvas": false,
-      "bodyTextLen": 8768,
-      "bodyTextHash": "92298e193c358de176fecd4e3fd42e9088e98e531850d39b5915214e302e71f7",
-      "bodyTextPrefix": "Marchés Trade Bot Compte Ordres Outils LIVE Bureau Kraken 54 636",
+      "bodyTextLen": 5587,
+      "bodyTextHash": "a5c5448af2d10e0b4f8947fe4c1c5a56c7dafa9232e6e888834e2c05f7b8eb32",
+      "bodyTextPrefix": "Marchés Trade Bot Compte Ordres Outils LIVE Bureau démo 33 640,0",
       "horizontalOverflow": false,
       "consoleErrors": [],
       "pageErrors": [],
@@ -21,9 +21,9 @@
       "status": 200,
       "title": "Nautilus",
       "hasCanvas": false,
-      "bodyTextLen": 8793,
-      "bodyTextHash": "893c0802f7b26ea5c3f08556e2f99921d26083974ef0e322b7dfcf8ef4b318fb",
-      "bodyTextPrefix": "Nautilus KRAKEN LIVE 15:21:27 Bureau Kraken 54 636,86 $US 104,66",
+      "bodyTextLen": 5596,
+      "bodyTextHash": "bd3b56081dfd7645d0084bcf9a61385f00e55fa53fa1939088b304d32ac80629",
+      "bodyTextPrefix": "Nautilus LIVE Bureau démo 33 640,00 $US 0,00 $US / 24h Trader To",
       "horizontalOverflow": false,
       "consoleErrors": [],
       "pageErrors": [],
@@ -35,7 +35,7 @@
   "verdictFile": "/workspace/screenshots/app-builder-built.json",
   "divergesFromBaseline": true,
   "baselineReasons": [
-    "desktop: body text changed (5586 -> 8768 chars, hash mismatch)",
-    "mobile: body text changed (5603 -> 8793 chars, hash mismatch)"
+    "desktop: body text replaced (similar length, page start changed)",
+    "mobile: body text changed (8619 -> 5596 chars, hash mismatch)"
   ]
 }

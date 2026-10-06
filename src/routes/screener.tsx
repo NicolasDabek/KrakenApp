@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/screener")({ component: ScreenerPage });
 
-type Filter = "all" | "breakout" | "oversold" | "volume" | "volatile";
+type Filter = "all" | "eur" | "breakout" | "oversold" | "volume" | "volatile";
 
 function ScreenerPage() {
   const tickersMap = useTradingStore((s) => s.tickers);
@@ -20,6 +20,7 @@ function ScreenerPage() {
 
   const rows = useMemo(() => {
     let list = [...tickers];
+    if (filter === "eur") list = list.filter((t) => PAIR_BY_ID[t.id]?.quote === "EUR");
     if (filter === "breakout") list = list.filter((t) => rangePosition(t.low, t.high, t.last) >= 0.9);
     if (filter === "oversold") list = list.filter((t) => rangePosition(t.low, t.high, t.last) <= 0.1);
     if (filter === "volume") {
@@ -44,6 +45,7 @@ function ScreenerPage() {
         onChange={setFilter}
         options={[
           { id: "all", label: "Tous" },
+          { id: "eur", label: "EUR" },
           { id: "breakout", label: "Breakout" },
           { id: "oversold", label: "Survente" },
           { id: "volume", label: "Volume" },

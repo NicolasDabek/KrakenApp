@@ -4,15 +4,20 @@ import { Badge } from "@/components/ui/badge";
 import { formatCompact, formatFiat, formatPct, formatPrice } from "@/lib/trading/format";
 import { PAIR_BY_ID } from "@/lib/trading/pairs";
 import { assetBoard, biasTone, marketSignal } from "@/lib/trading/signals";
-import { usdValue, useTradingStore } from "@/lib/trading/store";
+import { usdValue, isLiveConnected, liveBalanceRows, useTradingStore } from "@/lib/trading/store";
 import { cn } from "@/lib/utils";
 
 export function MarketOverview() {
   const tickers = useTradingStore((s) => s.tickers);
   const balances = useTradingStore((s) => s.balances);
+  const krakenBalances = useTradingStore((s) => s.krakenBalances);
+  const connection = useTradingStore((s) => s.connection);
   const watchlist = useTradingStore((s) => s.watchlist);
   const quote = useTradingStore((s) => s.settings.displayQuote);
   const lastPair = useTradingStore((s) => s.lastPair);
+  const bots = useTradingStore((s) => s.bots);
+  const live = isLiveConnected(connection);
+  const bag = live ? liveBalanceRows(krakenBalances) : balances;
 
   const list = useMemo(() => Object.values(tickers), [tickers]);
   const assets = useMemo(() => assetBoard(tickers), [tickers]);
@@ -23,16 +28,17 @@ export function MarketOverview() {
     [list],
   );
 
-  const totalUsd = balances.reduce((sum, b) => sum + usdValue(b.asset, b.available + b.hold, tickers), 0);
+  const totalUsd = bag.reduce((sum, b) => sum + usdValue(b.asset, b.available + b.hold, tickers), 0);
   const fx = usdValue("EUR", 1, tickers) || 1.08;
   const shown = quote === "EUR" ? totalUsd / fx : totalUsd;
   const dayPnl = list.length
-    ? balances.reduce((sum, b) => {
+    ? bag.reduce((sum, b) => {
         const t = list.find((x) => PAIR_BY_ID[x.id]?.base === b.asset && PAIR_BY_ID[x.id]?.quote === "USD");
         const usd = usdValue(b.asset, b.available + b.hold, tickers);
         return sum + usd * ((t?.changePct ?? 0) / 100);
       }, 0)
     : 0;
+  const runningBots = bots.filter((b) => b.status === "running");
 
   const watched = watchlist
     .map((id) => tickers[id])
@@ -45,7 +51,7 @@ export function MarketOverview() {
     <div className="space-y-4 px-4 pt-4">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <p className="text-sm text-muted-foreground">Bureau Kraken</p>
+          <p className="text-sm text-muted-foreground">{live ? "Compte Kraken" : "Bureau démo"}</p>
           <p className="mt-1 font-mono text-3xl font-medium tabular-nums tracking-tight">
             {formatFiat(shown, quote)}
           </p>
@@ -61,6 +67,18 @@ export function MarketOverview() {
           Trader
         </Link>
       </div>
+
+      {runningBots.length > 0 && (
+        <Link to="/bot" className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2.5">
+          <span className="text-xs text-muted-foreground">
+            {runningBots.length} bot{runningBots.length > 1 ? "s" : ""} en marche
+          </span>
+          <span className="font-mono text-xs tabular-nums text-buy">
+            {runningBots.reduce((s, b) => s + b.stats.realizedPnl, 0) >= 0 ? "+" : ""}
+            {runningBots.reduce((s, b) => s + b.stats.realizedPnl, 0).toFixed(2)} EUR
+          </span>
+        </Link>
+      )}
 
       {list.length > 0 && (
         <div>

@@ -1,0 +1,40 @@
+{
+  "url": "http://127.0.0.1:8081/fiscal",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 1724,
+      "bodyTextHash": "b2952432aaf5f1b901ec66df48e28c810f38fd5dcbcf65cc06f296ad59a30501",
+      "bodyTextPrefix": "Marchés Trade Bot Compte Ordres Outils LIVE Impôts Plus-values d",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/fiscal-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 1733,
+      "bodyTextHash": "5b042708c8d96bde6da00e96b3126daafc5bc7affa2a20daa0bcb6d0a445bccc",
+      "bodyTextPrefix": "Nautilus LIVE Impôts Plus-values d’actifs numériques, méthode du",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/fiscal-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/fiscal-built.json",
+  "divergesFromBaseline": true,
+  "baselineReasons": [
+    "desktop: body text replaced (similar length, page start changed)"
+  ]
+}

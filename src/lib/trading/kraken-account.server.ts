@@ -1,6 +1,7 @@
-import { formatKrakenVolume } from "./format";
-import { callKrakenPrivate, normalizeKrakenAsset, parseKrakenBalances } from "./kraken-private.server";
-import { PAIR_BY_ID, pairForAssets, resolvePairId } from "./pairs";
+import { formatKrakenVolume } from "./format.ts";
+import { type LedgerLeg, normalizeFiscalAsset } from "./fiscal.ts";
+import { callKrakenPrivate, normalizeKrakenAsset, parseKrakenBalances } from "./kraken-private.server.ts";
+import { PAIR_BY_ID, pairForAssets, resolvePairId } from "./pairs.ts";
 import type { Fill, NewOrderInput, Order, OrderSide, OrderStatus, OrderType, Position } from "./types";
 
 export type AuthKeys = { apiKey: string; apiSecret: string };
@@ -259,6 +260,24 @@ export async function fetchClosedOrders(keys: AuthKeys): Promise<Order[]> {
   return Object.entries(res.result?.closed ?? {}).map(([id, raw]) => parseOrder(id, raw));
 }
 
+export async function queryKrakenOrder(keys: AuthKeys, txid: string): Promise<Order | undefined> {
+  const id = txid.trim();
+  if (!id) return undefined;
+  for (let i = 0; i < 3; i++) {
+    if (i > 0) await sleep(350);
+    const res = await callKrakenPrivate<Record<string, RawOrder>>(keys.apiKey, keys.apiSecret, "QueryOrders", {
+      txid: id,
+    });
+    if (!res.ok || !res.result) continue;
+    const raw = res.result[id] ?? Object.values(res.result)[0];
+    if (!raw) continue;
+    const order = parseOrder(id, raw);
+    if (order.status === "filled" || order.avgPrice > 0 || order.filled > 0) return order;
+    if (i === 2) return order;
+  }
+  return undefined;
+}
+
 export async function fetchTradesHistory(keys: AuthKeys): Promise<Fill[]> {
   const res = await callKrakenPrivate<{ trades?: Record<string, RawTrade> }>(
     keys.apiKey,
@@ -269,6 +288,66 @@ export async function fetchTradesHistory(keys: AuthKeys): Promise<Fill[]> {
   return Object.entries(res.result?.trades ?? {})
     .map(([id, raw]) => parseFill(id, raw))
     .sort((a, b) => b.time - a.time);
+}
+
+type RawLedger = {
+  refid?: string;
+  time?: number;
+  type?: string;
+  asset?: string;
+  amount?: string;
+  fee?: string;
+};
+
+/** Full spot ledger (paginated). Needed to rebuild the French acquisition price. */
+export async function fetchKrakenLedgers(keys: AuthKeys): Promise<{
+  ok: boolean;
+  message: string;
+  legs: LedgerLeg[];
+  truncated: boolean;
+  count: number;
+}> {
+  const legs: LedgerLeg[] = [];
+  let ofs = 0;
+  let count = 0;
+  const maxPages = 40;
+  for (let page = 0; page < maxPages; page++) {
+    if (page > 0) await sleep(280);
+    const res = await callKrakenPrivate<{ ledger?: Record<string, RawLedger>; count?: number }>(
+      keys.apiKey,
+      keys.apiSecret,
+      "Ledgers",
+      { ofs: String(ofs) },
+    );
+    if (!res.ok || !res.result) {
+      if (page === 0) return { ok: false, message: res.message, legs: [], truncated: false, count: 0 };
+      return { ok: true, message: res.message, legs, truncated: true, count };
+    }
+    count = Number(res.result.count ?? count) || count;
+    const batch = Object.entries(res.result.ledger ?? {});
+    if (!batch.length) break;
+    for (const [id, raw] of batch) {
+      legs.push({
+        id,
+        refid: raw.refid || id,
+        time: Math.round((Number(raw.time) || 0) * 1000),
+        type: String(raw.type || "unknown").toLowerCase(),
+        asset: normalizeFiscalAsset(String(raw.asset || "")),
+        amount: Number(raw.amount) || 0,
+        fee: Number(raw.fee) || 0,
+      });
+    }
+    ofs += batch.length;
+    if ((count > 0 && ofs >= count) || batch.length < 50) break;
+  }
+  const truncated = count > legs.length;
+  return {
+    ok: true,
+    message: truncated ? "Historique Kraken tronqué (2 000 écritures max)." : "Grand livre chargé",
+    legs,
+    truncated,
+    count,
+  };
 }
 
 export async function fetchOpenPositions(keys: AuthKeys): Promise<Position[]> {

@@ -110,6 +110,8 @@ export type PriceAlert = {
   note: string;
   createdAt: number;
   triggeredAt?: number;
+  /** Last price seen. The alert fires only when the market crosses `price`. */
+  armPrice?: number;
 };
 
 export type ConnectionConfig = {
@@ -126,6 +128,16 @@ export type Settings = {
   displayQuote: "USD" | "EUR";
   makerFee: number;
   takerFee: number;
+  notifyFills?: boolean;
+  resumeLive?: boolean;
+  /** Pause live bots when the price feed goes stale. Default true. */
+  watchdog?: boolean;
+  /** Pause all bots of a venue when their combined day PnL hits −X EUR. 0 = off. */
+  deskDailyLoss?: number;
+  /** Pause all bots when marked equity drops this % from its peak. 0 = off. */
+  deskDrawdownPct?: number;
+  /** Block new buys when open bot inventory exceeds this % of equity. 0 = off. */
+  deskMaxExposurePct?: number;
 };
 
 export type RecurringBuy = {
@@ -183,14 +195,25 @@ export type BotKind =
   | "ichimoku"
   | "psar"
   | "sma"
-  | "ha";
+  | "ha"
+  | "mfi"
+  | "engulf"
+  | "obv"
+  | "div"
+  | "confirm";
 export type BotVenue = "paper" | "live";
 export type BotStatus = "idle" | "running" | "paused" | "error";
 
 export type GridLevelState = {
+  /** Trigger / remembered buy level (rebuy after a sell). */
   price: number;
   qty: number;
+  /** Actual fill price used for PnL and +X% resale. */
   entry: number;
+  /** Virtual buy order waiting for price to trade through `price`. */
+  pending?: boolean;
+  /** Remembered purchase: survive a band recenter. */
+  anchor?: boolean;
 };
 
 export type BotRuntime = {
@@ -224,11 +247,27 @@ export type BotRuntime = {
   dayTrades?: number;
   consecutiveLosses?: number;
   errorStreak?: number;
-};;
+  pendingFills?: { side: "buy" | "sell"; qty: number; price: number; note: string; entry?: number }[];
+  entryAt?: number;
+  entryBar?: number;
+  scaledOut?: boolean;
+  /** Working grid band (set when the range auto-recenters). */
+  gridLower?: number;
+  gridUpper?: number;
+  /** When true, the grid only sells — no new buys. */
+  buyPause?: boolean;
+  /** Consume-once: market-buy the first lot on the next eval. */
+  gridSeedNow?: boolean;
+  /** Grid: no new buys until this timestamp (after a lot stop). */
+  buyCoolUntil?: number;
+  /** Book to restore if the in-flight Kraken order never confirms. */
+  flightPrev?: BotRuntime;
+};
 
 export type BotStats = {
   trades: number;
   wins: number;
+  closes: number;
   feesPaid: number;
   realizedPnl: number;
   volume: number;
@@ -271,11 +310,50 @@ export type BotParams = {
   rocPeriod?: number;
   adxPeriod?: number;
   adxMin?: number;
+  /** Skip buys when ADX is above this. Used to keep mean-reversion out of strong trends. 0 = off. */
+  adxCeil?: number;
+  /** Skip buys when ADX is below this. Used to keep trend bots out of a dead range. 0 = off. */
+  adxFloor?: number;
+  /** Once the gain reaches this %, the stop moves to entry plus round-trip fees. 0 = off. */
+  beAfterPct?: number;
+  /** Mean-reversion: skip a buy when the signal bar fell at least this % versus the previous close. 0 = off. */
+  crashPct?: number;
   wrPeriod?: number;
   tenkan?: number;
   kijun?: number;
   psarAf?: number;
   psarMax?: number;
+  trendEma?: number;
+  slAtr?: number;
+  maxHoldMin?: number;
+  sessionStart?: number;
+  sessionEnd?: number;
+  partialTp?: number;
+  atrRiskPct?: number;
+  /** Grid: sell a lot this % above its purchase price. */
+  gridSellPct?: number;
+  /** Grid: after a buy, place the next buy this % below the fill. */
+  gridBuyPct?: number;
+  /** Grid: sell a losing lot this % below purchase, without rebuy. */
+  gridSlPct?: number;
+  /** Grid: slide the band when price leaves it and no lot is held. */
+  gridFollow?: boolean;
+  /** Reinvest this % of a winning sell into the next order size. */
+  compoundPct?: number;
+  /** Grid: add round-trip taker fees on top of the sell %. Default true. */
+  gridNetFees?: boolean;
+  /** Grid: take the first lot at market when the bot arms. */
+  gridSeed?: boolean;
+  /** Grid: wait this many minutes after a lot stop before new buys. */
+  gridSlCooldownMin?: number;
+  /** Cap EUR deployed by this bot (0 = unlimited). */
+  budgetQuote?: number;
+};
+
+export type BotEvent = {
+  t: number;
+  text: string;
+  side?: "buy" | "sell";
 };
 
 export type Bot = {
@@ -295,6 +373,7 @@ export type Bot = {
   error?: string;
   stats: BotStats;
   runtime: BotRuntime;
+  log?: BotEvent[];
 };
 
 export type PaperHolding = {

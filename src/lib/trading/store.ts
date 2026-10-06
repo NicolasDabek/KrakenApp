@@ -23,15 +23,18 @@ import type {
   TapeTrade,
   Ticker,
 } from "./types";
-import { applyPaperFill, DEFAULT_PAPER, EMPTY_STATS, evaluateBot, flattenPaper, kindNeedsCandles, kindTitle, paperEquity, resetPaperAccount, snapshotEquity } from "./bots";
-import { formatKrakenVolume, uid } from "./format";
-import { krakenAddOrder, krakenBalance, krakenCancel, krakenClosePosition, krakenConvert, krakenPlaceOrder, krakenSnapshot } from "./functions";
-import { DEFAULT_PAIR, PAIR_BY_ID, toEurPair } from "./pairs";
+import { applyPaperFill, botInventoryQty, botMark, DEFAULT_PAPER, dropFormingCandle, EMPTY_STATS, evaluateBot, evaluateDesk, flattenPaper, kindNeedsCandles, kindTitle, paperEquity, parseBotBlueprints, resetPaperAccount, snapshotEquity } from "./bots.ts";
+import { formatKrakenVolume, uid } from "./format.ts";
+import { krakenAddOrder, krakenBalance, krakenCancel, krakenClosePosition, krakenConvert, krakenPlaceOrder, krakenQueryOrder, krakenSnapshot } from "./functions.ts";
+import { DEFAULT_PAIR, PAIR_BY_ID, toEurPair } from "./pairs.ts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 const TAKER = 0.0026;
 const MAKER = 0.0016;
+export const FEED_STALE_MS = 18_000;
+export const FEED_DEAD_MS = 40_000;
+export const INFLIGHT_TIMEOUT_MS = 90_000;
 
 export const DEFAULT_BALANCES: Balance[] = [
   { asset: "USD", available: 25000, hold: 0 },
@@ -49,6 +52,12 @@ const DEFAULT_SETTINGS: Settings = {
   displayQuote: "USD",
   makerFee: MAKER,
   takerFee: TAKER,
+  notifyFills: false,
+  resumeLive: false,
+  watchdog: true,
+  deskDailyLoss: 0,
+  deskDrawdownPct: 0,
+  deskMaxExposurePct: 0,
 };
 
 const DEFAULT_CONNECTION: ConnectionConfig = {
@@ -86,6 +95,8 @@ type TradingState = {
   krakenOrders: Order[];
   krakenFills: Fill[];
   krakenPositions: Position[];
+  deskPeakPaper: number;
+  deskPeakLive: number;
   hydrateTickers: (list: Ticker[]) => void;
   setBook: (pair: string, book: OrderBook) => void;
   setTape: (pair: string, trades: TapeTrade[]) => void;
@@ -100,6 +111,7 @@ type TradingState = {
   closeLivePosition: (id: string) => Promise<{ ok: boolean; message: string }>;
   addAlert: (alert: Omit<PriceAlert, "id" | "createdAt">) => void;
   removeAlert: (id: string) => void;
+  rearmAlert: (id: string) => void;
   convert: (from: string, to: string, amount: number) => { ok: boolean; message: string };
   convertLive: (from: string, to: string, amount: number) => Promise<{ ok: boolean; message: string }>;
   addRecurring: (item: Omit<RecurringBuy, "id">) => void;
@@ -127,11 +139,17 @@ type TradingState = {
   setPaperFee: (rate: number) => void;
   resetPaper: () => void;
   flattenPaperPositions: () => void;
+  flattenBot: (id: string) => void;
+  panicLive: () => void;
   setBotCandles: (bag: Record<string, Candle[]>) => void;
   runBots: () => void;
-  pauseAllBots: (venue?: BotVenue) => void;
-  updateBot: (id: string, patch: Partial<Pick<Bot, "name" | "sizeQuote" | "params" | "interval">>) => void;
+  pauseAllBots: (venue?: BotVenue, opts?: { silent?: boolean; note?: string }) => void;
+  updateBot: (id: string, patch: Partial<Pick<Bot, "name" | "sizeQuote" | "params" | "interval" | "pair">>) => void;
   duplicateBot: (id: string) => Bot | null;
+  cloneBotToPair: (id: string, pair: string) => Bot | null;
+  toggleBuyPause: (id: string) => void;
+  seedGrid: (id: string) => { ok: boolean; message: string };
+  importBots: (raw: unknown) => { ok: boolean; message: string; count: number };
   syncKraken: (mode?: "light" | "full") => Promise<{ ok: boolean; message: string }>;
   dispatchKrakenFill: (input: {
     botId: string;
@@ -148,6 +166,29 @@ type TradingState = {
 
 function cloneBalances(list: Balance[]): Balance[] {
   return list.map((b) => ({ ...b }));
+}
+
+function pingFill(settings: Settings, title: string, body: string) {
+  if (!settings.notifyFills || typeof Notification === "undefined") return;
+  if (Notification.permission !== "granted") return;
+  try {
+    new Notification(title, { body });
+  } catch {
+    /* ignore blocked notifications */
+  }
+}
+
+function snapshotRuntime(runtime: BotRuntime): BotRuntime {
+  const copy = { ...runtime };
+  delete copy.flightPrev;
+  delete copy.inFlight;
+  delete copy.inFlightAt;
+  return copy;
+}
+
+function restoreFlight(runtime: BotRuntime): BotRuntime {
+  if (!runtime.flightPrev) return { ...runtime, inFlight: false, inFlightAt: undefined };
+  return { ...runtime.flightPrev, inFlight: false, inFlightAt: undefined, flightPrev: undefined };
 }
 
 function getBal(list: Balance[], asset: string): Balance {
@@ -205,6 +246,13 @@ function clonePaper(paper: PaperAccount): PaperAccount {
   };
 }
 
+function withLog(bot: Bot, text: string, side?: "buy" | "sell"): Bot {
+  return {
+    ...bot,
+    log: [{ t: Date.now(), text, side }, ...(bot.log ?? [])].slice(0, 40),
+  };
+}
+
 export const useTradingStore = create<TradingState>()(
   persist(
     (set, get) => ({
@@ -236,6 +284,8 @@ export const useTradingStore = create<TradingState>()(
       krakenOrders: [],
       krakenFills: [],
       krakenPositions: [],
+      deskPeakPaper: DEFAULT_PAPER.startingBalance,
+      deskPeakLive: 0,
 
       hydrateTickers: (list) => {
         const tickers = { ...get().tickers };
@@ -540,14 +590,21 @@ export const useTradingStore = create<TradingState>()(
       },
 
       addAlert: (alert) => {
+        const armPrice = get().tickers[alert.pair]?.last;
         set({
           alerts: [
-            { ...alert, id: uid("al"), createdAt: Date.now() },
+            { ...alert, id: uid("al"), createdAt: Date.now(), armPrice },
             ...get().alerts,
           ],
         });
       },
       removeAlert: (id) => set({ alerts: get().alerts.filter((a) => a.id !== id) }),
+      rearmAlert: (id) =>
+        set({
+          alerts: get().alerts.map((a) =>
+            a.id === id ? { ...a, triggeredAt: undefined, armPrice: get().tickers[a.pair]?.last ?? a.armPrice } : a,
+          ),
+        }),
 
       convert: (from, to, amount) => {
         if (!(amount > 0) || from === to) return { ok: false, message: "Conversion invalide." };
@@ -744,13 +801,15 @@ export const useTradingStore = create<TradingState>()(
           if (al.triggeredAt) return al;
           const t = tickers[al.pair];
           if (!t) return al;
-          const hit = al.condition === "above" ? t.last >= al.price : t.last <= al.price;
-          if (!hit) return al;
+          if (al.armPrice == null || !Number.isFinite(al.armPrice)) return { ...al, armPrice: t.last };
+          const prev = al.armPrice;
+          const crossed = al.condition === "above" ? prev < al.price && t.last >= al.price : prev > al.price && t.last <= al.price;
+          if (!crossed) return { ...al, armPrice: t.last };
           changed = true;
           toast("Alerte prix", {
             description: `${PAIR_BY_ID[al.pair]?.display} ${al.condition === "above" ? "≥" : "≤"} ${al.price}`,
           });
-          return { ...al, triggeredAt: now };
+          return { ...al, triggeredAt: now, armPrice: t.last };
         });
 
         for (const plan of nextRecurring) {
@@ -841,6 +900,7 @@ export const useTradingStore = create<TradingState>()(
           lastNote: "Prêt.",
           stats: { ...EMPTY_STATS },
           runtime: {},
+          log: [{ t: Date.now(), text: "Créé." }],
         };
         set({ bots: [bot, ...get().bots] });
         return bot;
@@ -849,6 +909,10 @@ export const useTradingStore = create<TradingState>()(
       startBot: (id) => {
         const bot = get().bots.find((b) => b.id === id);
         if (!bot) return { ok: false, message: "Bot introuvable." };
+        if (bot.runtime.inFlight) {
+          toast.message("Un ordre Kraken est encore en cours.");
+          return { ok: false, message: "Un ordre Kraken est encore en cours." };
+        }
         const pair = toEurPair(bot.pair);
         if (PAIR_BY_ID[pair]?.quote !== "EUR") {
           toast.message("Les bots n’opèrent qu’en EUR.");
@@ -869,18 +933,33 @@ export const useTradingStore = create<TradingState>()(
         set({
           bots: get().bots.map((b) =>
             b.id === id
-              ? {
-                  ...b,
-                  pair,
-                  status: "running",
-                  startedAt: Date.now(),
-                  lastNote: "Démarré.",
-                  error: undefined,
-                  runtime:
-                    b.kind === "dca"
-                      ? { ...b.runtime, nextDcaAt: Date.now(), inFlight: false }
-                      : { ...b.runtime, inFlight: false },
-                }
+              ? withLog(
+                  {
+                    ...b,
+                    pair,
+                    status: "running",
+                    startedAt: Date.now(),
+                    lastNote: "Démarré.",
+                    error: undefined,
+                    runtime:
+                      b.kind === "dca"
+                        ? { ...b.runtime, nextDcaAt: Date.now(), inFlight: false, pendingFills: undefined }
+                        : {
+                            ...b.runtime,
+                            inFlight: false,
+                            pendingFills: undefined,
+                            ...((b.runtime.gridOwned ?? []).some((g) => g.qty > 0)
+                              ? {}
+                              : { lastPrice: undefined, gridLower: undefined, gridUpper: undefined }),
+                            ...(b.kind === "grid" &&
+                            b.params.gridSeed &&
+                            !(b.runtime.gridOwned ?? []).some((g) => g.qty > 0)
+                              ? { gridSeedNow: true }
+                              : {}),
+                          },
+                  },
+                  "Démarré.",
+                )
               : b,
           ),
         });
@@ -891,7 +970,7 @@ export const useTradingStore = create<TradingState>()(
       pauseBot: (id) => {
         set({
           bots: get().bots.map((b) =>
-            b.id === id ? { ...b, status: "paused", lastNote: "En pause." } : b,
+            b.id === id ? withLog({ ...b, status: "paused", lastNote: "En pause." }, "En pause.") : b,
           ),
         });
       },
@@ -933,16 +1012,102 @@ export const useTradingStore = create<TradingState>()(
           stats: { ...EMPTY_STATS },
           runtime: {},
           pair: toEurPair(bot.pair),
+          log: [{ t: Date.now(), text: "Copie créée." }],
         };
         set({ bots: [copy, ...get().bots] });
         return copy;
+      },
+
+      cloneBotToPair: (id, pair) => {
+        const src = get().bots.find((b) => b.id === id);
+        if (!src) return null;
+        const dest = toEurPair(pair);
+        const last = get().tickers[dest]?.last ?? 0;
+        const copy = get().duplicateBot(id);
+        if (!copy) return null;
+        let params = copy.params;
+        if (copy.kind === "grid" && last > 0) {
+          const lo = copy.params.lower ?? 0;
+          const hi = copy.params.upper ?? 0;
+          const mid = lo > 0 && hi > lo ? (lo + hi) / 2 : 0;
+          if (mid > 0) {
+            const scale = last / mid;
+            params = { ...copy.params, lower: lo * scale, upper: hi * scale };
+          }
+        }
+        const meta = PAIR_BY_ID[dest];
+        const name = `${kindTitle(copy.kind)} ${meta?.display ?? dest}`;
+        get().updateBot(copy.id, { pair: dest, name, params });
+        return get().bots.find((b) => b.id === copy.id) ?? copy;
+      },
+
+      toggleBuyPause: (id) => {
+        const bot = get().bots.find((b) => b.id === id);
+        if (!bot) return;
+        const next = !bot.runtime.buyPause;
+        set({
+          bots: get().bots.map((b) =>
+            b.id === id
+              ? {
+                  ...b,
+                  runtime: { ...b.runtime, buyPause: next },
+                  lastNote: next ? "Achats en pause — reventes actives." : "Achats réarmés.",
+                }
+              : b,
+          ),
+        });
+        toast.message(next ? "Achats en pause" : "Achats réarmés");
+      },
+
+      seedGrid: (id) => {
+        const bot = get().bots.find((b) => b.id === id);
+        if (!bot || bot.kind !== "grid") return { ok: false, message: "Pas une grille." };
+        if (bot.status !== "running") return { ok: false, message: "Lance le bot d’abord." };
+        if ((bot.runtime.gridOwned ?? []).some((g) => g.qty > 0)) {
+          return { ok: false, message: "Un lot est déjà ouvert." };
+        }
+        set({
+          bots: get().bots.map((b) =>
+            b.id === id ? { ...b, runtime: { ...b.runtime, gridSeedNow: true }, lastNote: "Prise du premier lot…" } : b,
+          ),
+        });
+        get().runBots();
+        return { ok: true, message: "Premier lot envoyé." };
+      },
+
+      importBots: (raw) => {
+        const rows = parseBotBlueprints(raw);
+        if (!rows.length) return { ok: false, message: "Aucun bot valide dans le fichier.", count: 0 };
+        const created = rows.map((row) => {
+          const pair = toEurPair(row.pair);
+          const meta = PAIR_BY_ID[pair];
+          const bot: Bot = {
+            id: uid("bot"),
+            name: row.name.trim() || `${kindTitle(row.kind)} ${meta?.display ?? pair}`,
+            kind: row.kind,
+            venue: row.venue,
+            status: "idle",
+            pair,
+            interval: row.interval,
+            sizeQuote: row.sizeQuote,
+            params: row.params,
+            createdAt: Date.now(),
+            lastNote: "Importé.",
+            stats: { ...EMPTY_STATS },
+            runtime: {},
+            log: [{ t: Date.now(), text: "Importé." }],
+          };
+          return bot;
+        });
+        set({ bots: [...created, ...get().bots] });
+        return { ok: true, message: `${created.length} bot${created.length > 1 ? "s" : ""} importé${created.length > 1 ? "s" : ""}.`, count: created.length };
       },
 
       setPaperStart: (amount) => {
         if (!(amount > 0)) return { ok: false, message: "Solde de départ invalide." };
         const running = get().bots.some((b) => b.venue === "paper" && b.status === "running");
         if (running) return { ok: false, message: "Pause les bots papier avant de changer le solde." };
-        set({ paper: resetPaperAccount(amount, get().paper.feeRate) });
+        set({ paper: resetPaperAccount(amount, get().paper.feeRate), deskPeakPaper: amount });
         toast.message("Solde papier appliqué", { description: `${amount.toLocaleString("fr-FR")} EUR` });
         return { ok: true, message: "OK" };
       },
@@ -965,6 +1130,7 @@ export const useTradingStore = create<TradingState>()(
         const paper = get().paper;
         set({
           paper: resetPaperAccount(paper.startingBalance, paper.feeRate),
+          deskPeakPaper: paper.startingBalance,
           bots: get().bots.map((b) =>
             b.venue === "paper"
               ? { ...b, stats: { ...EMPTY_STATS }, runtime: {}, lastNote: "Compte papier réinitialisé.", status: "idle" }
@@ -977,22 +1143,168 @@ export const useTradingStore = create<TradingState>()(
       flattenPaperPositions: () => {
         const { paper, sold } = flattenPaper(get().paper, get().tickers);
         const eq = paperEquity(paper, get().tickers);
-        set({ paper: snapshotEquity(paper, eq) });
+        set({
+          paper: snapshotEquity(paper, eq),
+          bots: get().bots.map((b) =>
+            b.venue === "paper"
+              ? {
+                  ...b,
+                  runtime: {
+                    ...b.runtime,
+                    inPosition: false,
+                    positionQty: 0,
+                    positionAvg: 0,
+                    gridOwned: [],
+                    peakPrice: undefined,
+                    scaledOut: false,
+                    entryAt: undefined,
+                    entryBar: undefined,
+                  },
+                  lastNote: sold ? "Positions papier liquidées." : b.lastNote,
+                }
+              : b,
+          ),
+        });
         if (sold) toast.success(`Positions papier liquidées (${sold})`);
         else toast.message("Rien à liquider");
       },
 
-      setBotCandles: (bag) => set({ botCandles: { ...get().botCandles, ...bag } }),
-
-      pauseAllBots: (venue) => {
+      flattenBot: (id) => {
+        const bot = get().bots.find((b) => b.id === id);
+        if (!bot) return;
+        const ticker = get().tickers[bot.pair];
+        const meta = PAIR_BY_ID[bot.pair];
+        let qty = botInventoryQty(bot.runtime);
+        if (!(qty > 0) || !ticker?.last || !meta) {
+          toast.message("Pas de position à clôturer sur ce bot.");
+          return;
+        }
+        if (bot.venue === "live") {
+          const bals = get().krakenBalances;
+          const have = bals[meta.base] ?? 0;
+          if (Object.keys(bals).length > 0) {
+            if (!(have > 0)) {
+              toast.message(`Solde ${meta.base} insuffisant sur Kraken.`);
+              return;
+            }
+            qty = Math.min(qty, have);
+          }
+        }
+        const price = ticker.bid || ticker.last;
+        if (bot.venue === "live") {
+          if (bot.runtime.inFlight) {
+            toast.message("Ordre déjà en cours.");
+            return;
+          }
+          set({
+            bots: get().bots.map((b) =>
+              b.id === id
+                ? { ...b, runtime: { ...b.runtime, inFlight: true, inFlightAt: Date.now() }, lastNote: "Clôture Kraken…" }
+                : b,
+            ),
+          });
+          void get().dispatchKrakenFill({
+            botId: id,
+            pair: bot.pair,
+            side: "sell",
+            qty,
+            price,
+            note: "Clôture manuelle",
+            prevRuntime: bot.runtime,
+            intendedRuntime: {
+              ...bot.runtime,
+              inPosition: false,
+              positionQty: 0,
+              positionAvg: 0,
+              gridOwned: [],
+              inFlight: false,
+              pendingFills: undefined,
+            },
+            entryAvg: bot.runtime.positionAvg,
+          });
+          return;
+        }
+        const res = applyPaperFill(get().paper, {
+          botId: id,
+          pair: bot.pair,
+          base: meta.base,
+          side: "sell",
+          qty,
+          price,
+          note: "Clôture manuelle",
+        });
+        if (!res.ok) {
+          toast.message(res.message);
+          return;
+        }
+        const stats = { ...bot.stats };
+        stats.trades += 1;
+        stats.closes = (stats.closes ?? 0) + 1;
+        stats.feesPaid += res.trade.fee;
+        stats.volume += qty * price;
+        stats.realizedPnl += res.trade.pnl;
+        if (res.trade.pnl > 0) stats.wins += 1;
         set({
+          paper: snapshotEquity(res.paper, paperEquity(res.paper, get().tickers)),
           bots: get().bots.map((b) =>
-            b.status === "running" && (!venue || b.venue === venue)
-              ? { ...b, status: "paused", lastNote: "Stop global.", runtime: { ...b.runtime, inFlight: false } }
+            b.id === id
+              ? withLog(
+                  {
+                    ...b,
+                    stats,
+                    lastNote: "Position clôturée.",
+                    lastActionAt: Date.now(),
+                    runtime: {
+                      ...b.runtime,
+                      inPosition: false,
+                      positionQty: 0,
+                      positionAvg: 0,
+                      gridOwned: [],
+                    },
+                  },
+                  "Clôture manuelle",
+                  "sell",
+                )
               : b,
           ),
         });
-        toast.message(venue === "live" ? "Bots réels en pause" : "Bots en pause");
+        toast.success("Position papier clôturée");
+      },
+
+      panicLive: () => {
+        const live = get().bots.filter((b) => b.venue === "live");
+        get().pauseAllBots("live", { silent: true });
+        let closing = 0;
+        for (const bot of live) {
+          if (botInventoryQty(bot.runtime) > 0) {
+            closing += 1;
+            get().flattenBot(bot.id);
+          }
+        }
+        toast.message(
+          closing ? `Stop d’urgence · ${closing} position${closing > 1 ? "s" : ""} en clôture` : "Bots réels arrêtés",
+        );
+      },
+
+      setBotCandles: (bag) => set({ botCandles: { ...get().botCandles, ...bag } }),
+
+      pauseAllBots: (venue, opts) => {
+        const note = opts?.note ?? "Stop global.";
+        set({
+          bots: get().bots.map((b) =>
+            b.status === "running" && (!venue || b.venue === venue)
+              ? {
+                  ...b,
+                  status: "paused",
+                  lastNote: note,
+                  runtime: b.runtime.inFlight ? restoreFlight(b.runtime) : { ...b.runtime, inFlight: false },
+                }
+              : b,
+          ),
+        });
+        if (!opts?.silent) {
+          toast.message(opts?.note ?? (venue === "live" ? "Bots réels en pause" : "Bots en pause"));
+        }
       },
 
       syncKraken: async (mode = "full") => {
@@ -1081,9 +1393,10 @@ export const useTradingStore = create<TradingState>()(
           return;
         }
         const balances = get().krakenBalances;
-        if (input.side === "buy" && (get().krakenEur > 0 || Object.keys(balances).length > 0)) {
+        if (input.side === "buy") {
+          const known = get().krakenSyncAt > 0 || get().krakenEur > 0 || Object.keys(balances).length > 0;
           const need = input.qty * input.price * 1.004;
-          if (get().krakenEur + 1e-9 < need) {
+          if (known && get().krakenEur + 1e-9 < need) {
             fail(`EUR insuffisant sur Kraken (${need.toFixed(2)} requis).`, true);
             return;
           }
@@ -1107,18 +1420,33 @@ export const useTradingStore = create<TradingState>()(
           return;
         }
         const feeRate = get().settings.takerFee;
-        const fee = input.qty * input.price * feeRate;
+        let fillPx = input.price;
+        let fillQty = input.qty;
+        let fee = fillQty * fillPx * feeRate;
+        if (res.txid) {
+          try {
+            const q = await krakenQueryOrder({ data: { apiKey, apiSecret, txid: res.txid } });
+            if (q.ok && q.order) {
+              if (q.order.avgPrice > 0) fillPx = q.order.avgPrice;
+              if (q.order.filled > 0) fillQty = q.order.filled;
+              if (q.order.fee > 0) fee = q.order.fee;
+              else fee = fillQty * fillPx * feeRate;
+            }
+          } catch {
+            /* keep ticker price */
+          }
+        }
         let pnl = 0;
         if (input.side === "sell" && input.entryAvg && input.entryAvg > 0) {
-          pnl = input.qty * input.price - fee - input.entryAvg * input.qty;
+          pnl = fillQty * fillPx - fee - input.entryAvg * fillQty;
         }
         const live: LiveFill = {
           id: uid("lf"),
           botId: input.botId,
           pair: input.pair,
           side: input.side,
-          amount: input.qty,
-          price: input.price,
+          amount: fillQty,
+          price: fillPx,
           fee,
           pnl,
           note: input.note,
@@ -1132,31 +1460,46 @@ export const useTradingStore = create<TradingState>()(
             const stats = { ...b.stats };
             stats.trades += 1;
             stats.feesPaid += fee;
-            stats.volume += input.qty * input.price;
+            stats.volume += fillQty * fillPx;
             stats.realizedPnl += pnl;
-            if (pnl > 0) stats.wins += 1;
+            if (input.side === "sell") {
+              stats.closes = (stats.closes ?? 0) + 1;
+              if (pnl > 0) stats.wins += 1;
+            }
+            const compound = b.params.compoundPct ?? 0;
+            const sizeQuote =
+              compound > 0 && input.side === "sell" && pnl > 0
+                ? Math.max(5, b.sizeQuote + pnl * (compound / 100))
+                : b.sizeQuote;
             const dayPnl = (input.intendedRuntime.dayPnl ?? 0) + pnl;
             const dayTrades = (input.intendedRuntime.dayTrades ?? 0) + 1;
             const consecutiveLosses =
               input.side === "sell" ? (pnl < 0 ? (b.runtime.consecutiveLosses ?? 0) + 1 : 0) : (b.runtime.consecutiveLosses ?? 0);
-            return {
-              ...b,
-              stats,
-              lastActionAt: now,
-              lastNote: `${input.note}${res.txid ? ` · ${res.txid}` : ""}`,
-              error: undefined,
-              runtime: {
-                ...input.intendedRuntime,
-                inFlight: false,
-                dayPnl,
-                dayTrades,
-                consecutiveLosses,
-                errorStreak: 0,
+            return withLog(
+              {
+                ...b,
+                stats,
+                sizeQuote,
+                lastActionAt: now,
+                lastNote: `${input.note}${res.txid ? ` · ${res.txid}` : ""}`,
+                error: undefined,
+                runtime: {
+                  ...input.intendedRuntime,
+                  inFlight: false,
+                  inFlightAt: undefined,
+                  dayPnl,
+                  dayTrades,
+                  consecutiveLosses,
+                  errorStreak: 0,
+                },
               },
-            };
+              input.note,
+              input.side,
+            );
           }),
         });
         toast.success("Ordre Kraken", { description: res.message });
+        pingFill(get().settings, "Kraken", `${input.note}${res.txid ? ` · ${res.txid}` : ""}`);
         void get().syncKraken("light");
       },
 
@@ -1184,6 +1527,56 @@ export const useTradingStore = create<TradingState>()(
           (s, [asset, qty]) => s + eurValue(asset, qty, tickers),
           0,
         );
+        const settings = get().settings;
+        const allBots = get().bots;
+        const paperPeak = Math.max(
+          get().deskPeakPaper,
+          paper.startingBalance,
+          paperEq,
+          ...paper.equityCurve.map((p) => p.v),
+        );
+        const livePeak = Math.max(get().deskPeakLive, liveEq);
+        if (paperPeak !== get().deskPeakPaper || livePeak !== get().deskPeakLive) {
+          set({ deskPeakPaper: paperPeak, deskPeakLive: livePeak });
+        }
+        const paperDay = allBots.filter((b) => b.venue === "paper").reduce((s, b) => s + (b.runtime.dayPnl ?? 0), 0);
+        const paperExposure = running
+          .filter((b) => b.venue === "paper")
+          .reduce((s, b) => {
+            const t = tickers[toEurPair(b.pair)] ?? tickers[b.pair];
+            return s + botMark(b.runtime, t?.last ?? 0).exposure;
+          }, 0);
+        const paperDesk = evaluateDesk({
+          equity: paperEq,
+          peak: paperPeak,
+          dayPnl: paperDay,
+          exposure: paperExposure,
+          limits: settings,
+        });
+        if (paperDesk.halt && running.some((b) => b.venue === "paper")) {
+          get().pauseAllBots("paper", { note: paperDesk.note ?? "Stop bureau" });
+          pingFill(settings, "Nautilus", paperDesk.note ?? "Stop bureau");
+          return;
+        }
+        const liveDay = allBots.filter((b) => b.venue === "live").reduce((s, b) => s + (b.runtime.dayPnl ?? 0), 0);
+        const liveExposure = running
+          .filter((b) => b.venue === "live")
+          .reduce((s, b) => {
+            const t = tickers[toEurPair(b.pair)] ?? tickers[b.pair];
+            return s + botMark(b.runtime, t?.last ?? 0).exposure;
+          }, 0);
+        const liveDesk = evaluateDesk({
+          equity: liveEq,
+          peak: livePeak,
+          dayPnl: liveDay,
+          exposure: liveExposure,
+          limits: settings,
+        });
+        if (liveDesk.halt && running.some((b) => b.venue === "live")) {
+          get().pauseAllBots("live", { note: liveDesk.note ?? "Stop bureau" });
+          pingFill(settings, "Nautilus", liveDesk.note ?? "Stop bureau");
+          return;
+        }
         const nextBots: Bot[] = get().bots.map((bot): Bot => {
           if (bot.status !== "running") return bot;
           const pair = toEurPair(bot.pair);
@@ -1199,7 +1592,10 @@ export const useTradingStore = create<TradingState>()(
             return { ...bot, status: "error", lastNote: "Paire hors EUR." };
           }
           const candleKey = `${pair}:${bot.interval}`;
-          const candles = get().botCandles[candleKey] ?? get().botCandles[`${bot.pair}:${bot.interval}`];
+          const rawCandles = get().botCandles[candleKey] ?? get().botCandles[`${bot.pair}:${bot.interval}`];
+          const candles = kindNeedsCandles(bot.kind)
+            ? dropFormingCandle(rawCandles, bot.interval, now)
+            : rawCandles;
           if (kindNeedsCandles(bot.kind) && (!candles || candles.length < 10)) {
             if (bot.lastNote.startsWith("Chargement")) return bot;
             botsChanged = true;
@@ -1207,19 +1603,94 @@ export const useTradingStore = create<TradingState>()(
           }
           if (bot.runtime.inFlight) {
             const since = bot.runtime.inFlightAt ?? bot.lastActionAt ?? 0;
-            if (since && now - since > 90_000) {
+            if (since && now - since > INFLIGHT_TIMEOUT_MS) {
               botsChanged = true;
-              return {
-                ...bot,
-                lastNote: "Timeout Kraken, nouvel essai.",
-                runtime: { ...bot.runtime, inFlight: false, inFlightAt: undefined },
-              };
+              return withLog(
+                {
+                  ...bot,
+                  status: "paused",
+                  lastNote: "Timeout Kraken — pause pour éviter un double ordre. Vérifie l’ordre puis relance.",
+                  error: "Timeout Kraken",
+                  runtime: restoreFlight(bot.runtime),
+                },
+                "Timeout Kraken — pause sécurité",
+              );
             }
             return bot;
           }
+          const queued = (bot.runtime.pendingFills ?? []).filter((f) => f.qty >= meta.ordermin);
+          if (queued.length) {
+            const fill = queued[0]!;
+            const rest = queued.slice(1);
+            botsChanged = true;
+            outgoing.push({
+              botId: bot.id,
+              pair,
+              side: fill.side,
+              qty: fill.qty,
+              price: fill.price,
+              note: fill.note,
+              prevRuntime: bot.runtime,
+              intendedRuntime: { ...bot.runtime, pendingFills: rest },
+              entryAvg: fill.entry && fill.entry > 0 ? fill.entry : bot.runtime.positionAvg,
+            });
+            return {
+              ...bot,
+              pair,
+              runtime: { ...bot.runtime, pendingFills: rest, inFlight: true, inFlightAt: now, flightPrev: snapshotRuntime(bot.runtime) },
+              lastNote: "Envoi de l’ordre à Kraken…",
+            };
+          }
+          const lastTickAt = get().lastTickAt;
+          const watchdog = get().settings.watchdog !== false;
+          if (bot.venue === "live" && lastTickAt > 0) {
+            const age = now - lastTickAt;
+            if (age > FEED_DEAD_MS && watchdog) {
+              botsChanged = true;
+              return withLog(
+                {
+                  ...bot,
+                  status: "paused",
+                  lastNote: "Flux prix figé — pause sécurité.",
+                  error: "Flux prix figé",
+                },
+                "Flux prix figé — pause sécurité",
+              );
+            }
+            if (age > FEED_STALE_MS) {
+              if (bot.lastNote.startsWith("Flux prix figé")) return bot;
+              botsChanged = true;
+              return { ...bot, lastNote: "Flux prix figé — pas d’ordre." };
+            }
+          }
+          const desk = bot.venue === "paper" ? paperDesk : liveDesk;
           const { fills, runtime, note } = evaluateBot(
             { ...bot, pair },
-            { now, ticker, candles, equity: bot.venue === "paper" ? paperEq : liveEq || paperEq },
+            {
+              now,
+              ticker,
+              candles,
+              equity: bot.venue === "paper" ? paperEq : liveEq || paperEq,
+              quoteBudget:
+                bot.venue === "paper"
+                  ? desk.blockBuys
+                    ? 0
+                    : paper.cash
+                  : desk.blockBuys
+                    ? 0
+                    : get().krakenSyncAt > 0
+                      ? get().krakenEur
+                      : undefined,
+              baseBudget:
+                bot.venue === "paper"
+                  ? paper.holdings[meta.base]?.qty ?? 0
+                  : get().krakenSyncAt > 0
+                    ? (get().krakenBalances[meta.base] ?? 0)
+                    : undefined,
+              feeRate: bot.venue === "paper" ? paper.feeRate : get().settings.takerFee,
+              maxFills: bot.venue === "live" ? 1 : undefined,
+              closedOnly: true,
+            },
           );
           let next: Bot = { ...bot, pair, runtime, lastNote: note };
           if (
@@ -1236,7 +1707,12 @@ export const useTradingStore = create<TradingState>()(
               runtime.lastPrice === bot.runtime.lastPrice &&
               runtime.lastCandleTime === bot.runtime.lastCandleTime &&
               runtime.nextDcaAt === bot.runtime.nextDcaAt &&
-              runtime.peakPrice === bot.runtime.peakPrice
+              runtime.peakPrice === bot.runtime.peakPrice &&
+              (runtime.gridOwned?.length ?? 0) === (bot.runtime.gridOwned?.length ?? 0) &&
+              runtime.buyPause === bot.runtime.buyPause &&
+              runtime.gridLower === bot.runtime.gridLower &&
+              runtime.buyCoolUntil === bot.runtime.buyCoolUntil &&
+              runtime.gridSeedNow === bot.runtime.gridSeedNow
             ) {
               return bot;
             }
@@ -1245,11 +1721,15 @@ export const useTradingStore = create<TradingState>()(
           }
           const stats = { ...bot.stats };
           if (bot.venue === "live") {
-            const fill = fills.find((f) => f.qty >= meta.ordermin);
-            if (!fill) {
+            const queued = (bot.runtime.pendingFills ?? []).filter((f) => f.qty >= meta.ordermin);
+            const fresh = fills.filter((f) => f.qty >= meta.ordermin);
+            const valid = queued.length ? queued : fresh;
+            if (!valid.length) {
               botsChanged = true;
               return { ...next, lastNote: `Sous le minimum ${meta.ordermin} ${meta.base}.` };
             }
+            const fill = valid[0]!;
+            const rest = valid.slice(1);
             botsChanged = true;
             outgoing.push({
               botId: bot.id,
@@ -1259,15 +1739,16 @@ export const useTradingStore = create<TradingState>()(
               price: fill.price,
               note: fill.note,
               prevRuntime: bot.runtime,
-              intendedRuntime: runtime,
-              entryAvg: bot.runtime.positionAvg,
+              intendedRuntime: { ...runtime, pendingFills: rest },
+              entryAvg: fill.entry && fill.entry > 0 ? fill.entry : bot.runtime.positionAvg,
             });
             return {
               ...next,
-              runtime: { ...runtime, inFlight: true, inFlightAt: now },
+              runtime: { ...runtime, pendingFills: rest, inFlight: true, inFlightAt: now, flightPrev: snapshotRuntime(bot.runtime) },
               lastNote: "Envoi de l’ordre à Kraken…",
             };
           }
+          let filled = 0;
           for (const fill of fills) {
             if (fill.qty < meta.ordermin) {
               next = { ...next, lastNote: `Sous le minimum ${meta.ordermin} ${meta.base}.` };
@@ -1281,18 +1762,27 @@ export const useTradingStore = create<TradingState>()(
               qty: fill.qty,
               price: fill.price,
               note: fill.note,
+              costBasis: fill.entry,
             });
             if (!res.ok) {
               next = { ...next, lastNote: res.message };
               continue;
             }
+            filled += 1;
             paper = res.paper;
             paperChanged = true;
             stats.trades += 1;
             stats.feesPaid += res.trade.fee;
             stats.volume += fill.qty * fill.price;
             stats.realizedPnl += res.trade.pnl;
-            if (res.trade.pnl > 0) stats.wins += 1;
+            if (fill.side === "sell") {
+              stats.closes = (stats.closes ?? 0) + 1;
+              if (res.trade.pnl > 0) stats.wins += 1;
+            }
+            const compound = bot.params.compoundPct ?? 0;
+            if (compound > 0 && fill.side === "sell" && res.trade.pnl > 0) {
+              next.sizeQuote = Math.max(5, next.sizeQuote + res.trade.pnl * (compound / 100));
+            }
             const dayPnl = (next.runtime.dayPnl ?? 0) + res.trade.pnl;
             const dayTrades = (next.runtime.dayTrades ?? 0) + 1;
             const consecutiveLosses =
@@ -1301,16 +1791,47 @@ export const useTradingStore = create<TradingState>()(
                   ? (next.runtime.consecutiveLosses ?? 0) + 1
                   : 0
                 : (next.runtime.consecutiveLosses ?? 0);
-            next = {
-              ...next,
-              stats,
-              lastActionAt: now,
-              lastNote: fill.note,
-              runtime: { ...next.runtime, dayPnl, dayTrades, consecutiveLosses },
-            };
+            next = withLog(
+              {
+                ...next,
+                stats,
+                lastActionAt: now,
+                lastNote: fill.note,
+                runtime: { ...next.runtime, dayPnl, dayTrades, consecutiveLosses },
+              },
+              fill.note,
+              fill.side,
+            );
             toast.message(bot.name, {
               description: `${fill.side === "buy" ? "Achat" : "Vente"} papier · frais ${res.trade.fee.toFixed(2)} EUR`,
             });
+            pingFill(
+              get().settings,
+              bot.name,
+              `${fill.side === "buy" ? "Achat" : "Vente"} ${fill.note}`,
+            );
+          }
+          if (filled === 0 && fills.length > 0) {
+            next = {
+              ...next,
+              runtime: {
+                ...next.runtime,
+                inPosition: bot.runtime.inPosition,
+                positionQty: bot.runtime.positionQty,
+                positionAvg: bot.runtime.positionAvg,
+                gridOwned: bot.runtime.gridOwned,
+                peakPrice: bot.runtime.peakPrice,
+                nextDcaAt: bot.runtime.nextDcaAt,
+                scaledOut: bot.runtime.scaledOut,
+                entryAt: bot.runtime.entryAt,
+                entryBar: bot.runtime.entryBar,
+                gridLower: bot.runtime.gridLower,
+                gridUpper: bot.runtime.gridUpper,
+                buyPause: bot.runtime.buyPause,
+                buyCoolUntil: bot.runtime.buyCoolUntil,
+                gridSeedNow: bot.runtime.gridSeedNow,
+              },
+            };
           }
           botsChanged = true;
           return next;
@@ -1329,7 +1850,7 @@ export const useTradingStore = create<TradingState>()(
     }),
     {
       name: "nautilus-desk",
-      version: 2,
+      version: 3,
       storage: typeof window === "undefined" ? undefined : createJSONStorage(() => localStorage),
       partialize: (s) => ({
         watchlist: s.watchlist,
@@ -1343,9 +1864,25 @@ export const useTradingStore = create<TradingState>()(
         journal: s.journal,
         settings: s.settings,
         connection: s.connection,
-        bots: s.bots,
-        paper: s.paper,
-        liveFills: s.liveFills,
+        bots: s.bots.map((b) => ({
+          ...b,
+          log: (b.log ?? []).slice(0, 24),
+          runtime: {
+            ...(b.runtime.flightPrev ? b.runtime.flightPrev : b.runtime),
+            inFlight: false,
+            inFlightAt: undefined,
+            pendingFills: undefined,
+            flightPrev: undefined,
+          },
+        })),
+        paper: {
+          ...s.paper,
+          trades: s.paper.trades.slice(0, 200),
+          equityCurve: s.paper.equityCurve.slice(-120),
+        },
+        liveFills: s.liveFills.slice(0, 200),
+        deskPeakPaper: s.deskPeakPaper,
+        deskPeakLive: s.deskPeakLive,
       }),
       skipHydration: true,
       migrate: (persisted, from) => {
@@ -1362,9 +1899,13 @@ export const useTradingStore = create<TradingState>()(
       },
       onRehydrateStorage: () => (state) => {
         if (!state) return;
+        if (!(state.deskPeakPaper > 0)) {
+          state.deskPeakPaper = state.paper?.startingBalance ?? DEFAULT_PAPER.startingBalance;
+        }
+        if (!(state.deskPeakLive >= 0)) state.deskPeakLive = 0;
         state.bots = state.bots.map((b) => {
           const pair = toEurPair(b.pair);
-          const pauseLive = b.venue === "live" && b.status === "running";
+          const pauseLive = b.venue === "live" && b.status === "running" && !state.settings.resumeLive;
           const next: Bot = {
             ...b,
             pair,

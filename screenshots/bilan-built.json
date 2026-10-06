@@ -1,0 +1,40 @@
+{
+  "url": "http://127.0.0.1:8081/bilan",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 320,
+      "bodyTextHash": "a30527725d75f6afa10e04c283d86d10020910dd347a4bdc3b3d7b7903c418ba",
+      "bodyTextPrefix": "Marchés Trade Bot Compte Ordres Outils OFF Bilan PnL réalisé des",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/bilan-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 330,
+      "bodyTextHash": "4c3e265fb575e6329122cda334015f920b125cf3d6aefe432cd44666f0c8c48d",
+      "bodyTextPrefix": "Nautilus LIVE Bilan PnL réalisé des bots, papier et Kraken. Rien",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/bilan-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/bilan-built.json",
+  "divergesFromBaseline": true,
+  "baselineReasons": [
+    "mobile: body text replaced (similar length, page start changed)"
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/bot",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 2824,
+      "bodyTextHash": "ff2d26d787170209478c6d206c2c1ccda5f1b1c8baae1df215ed17796ad21026",
+      "bodyTextPrefix": "Marchés Trade Bot Compte Ordres Outils OFF Bots Automatisation s",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/bot-desk.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 2829,
+      "bodyTextHash": "2580b292fd8fe403c19c0600639162ea1b746e0dd4b75cdf1190241f6470da8b",
+      "bodyTextPrefix": "Nautilus LIVE Bots Automatisation spot EUR sur Kraken. Simulatio",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/bot-desk-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/bot-desk.json"
+}

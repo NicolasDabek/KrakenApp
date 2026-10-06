@@ -5,11 +5,13 @@ import {
   BookOpen,
   Bot,
   Calculator,
+  ChartColumn,
   Coins,
   GitCompare,
   Grid3x3,
   Percent,
   Plug,
+  Receipt,
   Repeat,
   ScanSearch,
   Settings,
@@ -31,12 +33,13 @@ const GROUPS = [
   {
     title: "Trading",
     items: [
-      { to: "/bot", title: "Bots", desc: "17 stratégies EUR, papier ou Kraken réel", icon: Bot },
+      { to: "/bot", title: "Bots", desc: "27 stratégies EUR, papier ou Kraken réel", icon: Bot },
       { to: "/alerts", title: "Alertes prix", desc: "Seuils haut / bas", icon: Bell },
       { to: "/dca", title: "Achats récurrents", desc: "DCA quotidien ou hebdo", icon: Repeat },
       { to: "/risk", title: "Taille de position", desc: "Risque %, R:R, marge", icon: Shield },
       { to: "/calculator", title: "Calculateur", desc: "PnL, liquidation, frais", icon: Calculator },
       { to: "/journal", title: "Journal", desc: "Plans et post-mortem", icon: BookOpen },
+      { to: "/bilan", title: "Bilan", desc: "PnL réalisé, frais, par paire", icon: ChartColumn },
     ],
   },
   {
@@ -44,6 +47,7 @@ const GROUPS = [
     items: [
       { to: "/convert", title: "Convertir", desc: "Swap interne du compte démo", icon: ArrowLeftRight },
       { to: "/staking", title: "Staking", desc: "Projection d’APR", icon: Coins },
+      { to: "/fiscal", title: "Impôts", desc: "2086, PFU, exports", icon: Receipt },
       { to: "/connect", title: "Connexion API", desc: "Clés Kraken pour les bots réels", icon: Plug },
       { to: "/settings", title: "Paramètres", desc: "Frais, confirmations, reset", icon: Settings },
     ],

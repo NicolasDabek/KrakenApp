@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Sheet } from "@/components/layout/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatFiat, formatPrice, formatQty } from "@/lib/trading/format";
+import { formatFiat, formatPrice, formatQty, parseDecimal } from "@/lib/trading/format";
 import { PAIR_BY_ID } from "@/lib/trading/pairs";
 import { useTradingStore } from "@/lib/trading/store";
 import type { OrderSide, OrderType } from "@/lib/trading/types";
@@ -32,6 +32,7 @@ export function TradeForm({
   const placeOrder = useTradingStore((s) => s.placeOrder);
   const placeLiveOrder = useTradingStore((s) => s.placeLiveOrder);
   const confirm = useTradingStore((s) => s.settings.confirmOrders);
+  const takerFee = useTradingStore((s) => s.settings.takerFee);
   const [side, setSide] = useState<OrderSide>(forcedSide ?? "buy");
   const [type, setType] = useState<OrderType>("market");
   const [amount, setAmount] = useState("");
@@ -47,8 +48,8 @@ export function TradeForm({
 
   const activeSide = forcedSide ?? side;
   const last = ticker?.last ?? 0;
-  const px = type === "market" ? last : Number(price) || seedPrice || last;
-  const qty = Number(amount) || 0;
+  const px = type === "market" ? last : parseDecimal(price) || seedPrice || last;
+  const qty = parseDecimal(amount) ?? 0;
 
   const live = Boolean(connection.apiKey && connection.apiSecret);
   const baseBal = live
@@ -60,7 +61,7 @@ export function TradeForm({
   const available = activeSide === "buy" ? quoteBal : baseBal;
 
   const total = qty * px;
-  const fee = total * 0.0026;
+  const fee = total * takerFee;
 
   const setPct = (pct: number) => {
     if (!meta) return;
@@ -83,12 +84,12 @@ export function TradeForm({
     side: activeSide,
     type,
     amount: qty,
-    price: type === "market" || type === "stop" ? undefined : Number(price) || px,
-    stopPrice: type === "stop" || type === "stop-limit" ? Number(stop) || undefined : undefined,
+    price: type === "market" || type === "stop" ? undefined : parseDecimal(price) || px,
+    stopPrice: type === "stop" || type === "stop-limit" ? parseDecimal(stop) || undefined : undefined,
     leverage,
-    tp: Number(tp) || undefined,
-    sl: Number(sl) || undefined,
-    trailingPct: Number(trail) || undefined,
+    tp: parseDecimal(tp) || undefined,
+    sl: parseDecimal(sl) || undefined,
+    trailingPct: parseDecimal(trail) || undefined,
   };
 
   const send = async () => {
@@ -272,7 +273,7 @@ export function TradeForm({
 
         <div className="space-y-1 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
           <Row k="Total estimé" v={formatFiat(total, meta?.quote === "EUR" ? "EUR" : "USD")} />
-          <Row k="Frais taker 0,26 %" v={formatFiat(fee, meta?.quote === "EUR" ? "EUR" : "USD")} />
+          <Row k={`Frais taker ${(takerFee * 100).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} %`} v={formatFiat(fee, meta?.quote === "EUR" ? "EUR" : "USD")} />
         </div>
 
         {error && <p className="text-sm text-sell">{error}</p>}

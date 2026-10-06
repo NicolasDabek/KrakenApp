@@ -20,6 +20,22 @@ export function formatQty(qty: number, decimals = 6): string {
   });
 }
 
+/** Accepts 1.5, 1,5, 1 234,56 and 1.234,56. */
+export function parseDecimal(raw: string): number | null {
+  let t = raw.trim().replace(/[\s\u202f\u00a0]/g, "");
+  if (!t) return null;
+  const comma = t.lastIndexOf(",");
+  const dot = t.lastIndexOf(".");
+  if (comma >= 0 && dot >= 0) {
+    t = comma > dot ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
+  } else if (comma >= 0) {
+    t = t.replace(",", ".");
+  }
+  if (!/^[+-]?\d+(\.\d+)?$/.test(t)) return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function formatFiat(value: number, currency: "USD" | "EUR" = "USD"): string {
   if (!Number.isFinite(value)) return "—";
   return value.toLocaleString(loc, {

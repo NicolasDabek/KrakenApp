@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import { kindNeedsCandles } from "./bots";
-import { fetchOhlc } from "./functions";
-import { useTradingStore } from "./store";
+import { dropFormingCandle, kindNeedsCandles } from "./bots.ts";
+import { fetchOhlc } from "./functions.ts";
+import { useTradingStore } from "./store.ts";
 
 export function useBotEngine() {
   const runningKey = useTradingStore((s) =>
@@ -33,7 +33,8 @@ export function useBotEngine() {
             const [pair, interval] = key.split(":");
             if (!pair || !interval) return;
             try {
-              bag[key] = await fetchOhlc({ data: { pair, interval: Number(interval) } });
+              const rows = await fetchOhlc({ data: { pair, interval: Number(interval) } });
+              bag[key] = dropFormingCandle(rows, Number(interval), Date.now()) ?? rows;
             } catch {
               /* keep last candles */
             }

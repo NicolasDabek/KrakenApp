@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/tools",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 749,
+      "bodyTextHash": "28781add7476b2e46e279adc202f391155d5c9d3dd6388f5c46fb16eb8f0b169",
+      "bodyTextPrefix": "Marchés Trade Bot Compte Ordres Outils OFF Outils Suite autour d",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/tools-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Nautilus",
+      "hasCanvas": false,
+      "bodyTextLen": 758,
+      "bodyTextHash": "def5aa33ec65bb2a2bb64843ebb028afebeb8c1e16a9fd88c5ac440f316595c3",
+      "bodyTextPrefix": "Nautilus OFF Outils Suite autour du carnet Kraken. Les bots réel",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/tools-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/tools-preview.json"
+}

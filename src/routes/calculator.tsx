@@ -3,6 +3,8 @@ import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Input } from "@/components/ui/input";
 import { formatFiat, formatPct } from "@/lib/trading/format";
+import { PAIR_BY_ID } from "@/lib/trading/pairs";
+import { useTradingStore } from "@/lib/trading/store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/calculator")({ component: CalculatorPage });
@@ -10,9 +12,14 @@ export const Route = createFileRoute("/calculator")({ component: CalculatorPage 
 type Mode = "pnl" | "liq" | "fees";
 
 function CalculatorPage() {
+  const lastPair = useTradingStore((s) => s.lastPair);
+  const last = useTradingStore((s) => s.tickers[lastPair]?.last ?? 0);
+  const takerFee = useTradingStore((s) => s.settings.takerFee);
+  const makerFee = useTradingStore((s) => s.settings.makerFee);
+  const meta = PAIR_BY_ID[lastPair];
   const [mode, setMode] = useState<Mode>("pnl");
-  const [entry, setEntry] = useState("97000");
-  const [exit, setExit] = useState("101000");
+  const [entry, setEntry] = useState(() => (last ? String(last) : "67000"));
+  const [exit, setExit] = useState(() => (last ? String(Math.round(last * 1.04)) : "70000"));
   const [size, setSize] = useState("0.1");
   const [leverage, setLeverage] = useState("5");
   const [side, setSide] = useState<"long" | "short">("long");
@@ -32,15 +39,15 @@ function CalculatorPage() {
     const roe = cost ? (pnl / (cost / lev)) * 100 : 0;
     const mm = 0.006;
     const liq = side === "long" ? e * (1 - (1 / lev - mm)) : e * (1 + (1 / lev - mm));
-    const taker = n * 0.0026;
-    const maker = n * 0.0016;
-    const round = n * 0.0026 * 2;
+    const taker = n * takerFee;
+    const maker = n * makerFee;
+    const round = n * takerFee * 2;
     return { pnl, pct, roe, liq, taker, maker, round };
-  }, [e, x, q, lev, side, n]);
+  }, [e, x, q, lev, side, n, takerFee, makerFee]);
 
   return (
     <div className="mx-auto max-w-xl px-4 py-5">
-      <PageHeader title="Calculateur" kicker="PnL, liquidation et frais Kraken" />
+      <PageHeader title="Calculateur" kicker={`PnL, liquidation et frais · ${meta?.display ?? lastPair}`} />
       <div className="flex gap-1">
         {(
           [

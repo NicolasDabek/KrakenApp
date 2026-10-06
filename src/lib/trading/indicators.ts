@@ -1,4 +1,4 @@
-import type { Candle } from "./types";
+import type { Candle } from "./types.ts";
 
 export function sma(values: number[], period: number): (number | null)[] {
   const out: (number | null)[] = [];
@@ -459,6 +459,59 @@ export function psar(candles: Candle[], step = 0.02, maxAf = 0.2) {
     dir.push(up ? "up" : "down");
   }
   return { sar, dir };
+}
+
+export function mfi(candles: Candle[], period = 14): (number | null)[] {
+  const out: (number | null)[] = [];
+  const pos: number[] = [];
+  const neg: number[] = [];
+  let prevTp: number | null = null;
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i]!;
+    const tp = (c.high + c.low + c.close) / 3;
+    const flow = tp * c.volume;
+    if (prevTp == null) {
+      pos.push(0);
+      neg.push(0);
+    } else if (tp >= prevTp) {
+      pos.push(flow);
+      neg.push(0);
+    } else {
+      pos.push(0);
+      neg.push(flow);
+    }
+    prevTp = tp;
+    if (i < period) {
+      out.push(null);
+      continue;
+    }
+    let p = 0;
+    let n = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      p += pos[j] ?? 0;
+      n += neg[j] ?? 0;
+    }
+    if (n <= 0) out.push(100);
+    else out.push(100 - 100 / (1 + p / n));
+  }
+  return out;
+}
+
+export function obv(candles: Candle[]): number[] {
+  const out: number[] = [];
+  let acc = 0;
+  for (let i = 0; i < candles.length; i++) {
+    if (i === 0) {
+      out.push(0);
+      continue;
+    }
+    const prev = candles[i - 1]!.close;
+    const cur = candles[i]!.close;
+    if (cur > prev) acc += candles[i]!.volume;
+    else if (cur < prev) acc -= candles[i]!.volume;
+    out.push(acc);
+  }
+  return out;
 }
 
 export function heikinAshi(candles: Candle[]): Candle[] {

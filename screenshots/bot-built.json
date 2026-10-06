@@ -7,8 +7,8 @@
       "status": 200,
       "title": "Nautilus",
       "hasCanvas": false,
-      "bodyTextLen": 1526,
-      "bodyTextHash": "ba68a4cb89e9c1d8a40c1f673225925818714f6507104af1c2bb7260848bc307",
+      "bodyTextLen": 3031,
+      "bodyTextHash": "1b57bf44252d04ea0833d9a776c13257149f1fe6dc91536197c2e4f1371f7654",
       "bodyTextPrefix": "Marchés Trade Bot Compte Ordres Outils LIVE Bots Automatisation ",
       "horizontalOverflow": false,
       "consoleErrors": [],
@@ -21,9 +21,9 @@
       "status": 200,
       "title": "Nautilus",
       "hasCanvas": false,
-      "bodyTextLen": 1551,
-      "bodyTextHash": "fbf19f445b36309feaf09e5cd24deb0ad0f01609d92f475be79a425b55ceeff6",
-      "bodyTextPrefix": "Nautilus KRAKEN LIVE 13:55:41 Bots Automatisation spot EUR sur K",
+      "bodyTextLen": 2833,
+      "bodyTextHash": "e04ac38f8e78f04e92c52ea60cc2fae65006386ce6ecbc191bcb10b504aea3cd",
+      "bodyTextPrefix": "Nautilus OFF Bots Automatisation spot EUR sur Kraken. Simulation",
       "horizontalOverflow": false,
       "consoleErrors": [],
       "pageErrors": [],
@@ -35,7 +35,6 @@
   "verdictFile": "/workspace/screenshots/bot-built.json",
   "divergesFromBaseline": true,
   "baselineReasons": [
-    "desktop: body text replaced (similar length, page start changed)",
-    "mobile: body text replaced (similar length, page start changed)"
+    "desktop: body text replaced (similar length, page start changed)"
   ]
 }

@@ -42,6 +42,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const lastPair = useTradingStore((s) => s.lastPair);
   const live = useTradingStore((s) => s.live);
   const lastTickAt = useTradingStore((s) => s.lastTickAt);
+  const runningBots = useTradingStore((s) => s.bots.reduce((n, b) => n + (b.status === "running" ? 1 : 0), 0));
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
@@ -50,7 +51,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <NautilusMark className="size-7" />
           <span className="text-sm font-semibold tracking-tight">Nautilus</span>
         </div>
-        <LivePill live={live} at={lastTickAt} />
+        <LivePill live={live} at={lastTickAt} compact />
       </header>
 
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-20 flex-col items-center border-r border-border bg-card pt-5 lg:flex">
@@ -72,8 +73,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                   active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                <span className={cn("grid size-9 place-items-center rounded-full", active && "bg-muted")}>
+                <span className={cn("relative grid size-9 place-items-center rounded-full", active && "bg-muted")}>
                   <Icon className={cn("size-5", active && "text-accent")} strokeWidth={1.75} />
+                  {item.to === "/bot" && runningBots > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-buy px-1 text-[9px] font-semibold text-buy-foreground">
+                      {runningBots}
+                    </span>
+                  )}
                 </span>
                 {item.label}
               </Link>
@@ -107,8 +113,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                   active ? "text-foreground" : "text-muted-foreground",
                 )}
               >
-                <span className={cn("grid size-9 place-items-center rounded-full", active && "bg-muted")}>
+                <span className={cn("relative grid size-9 place-items-center rounded-full", active && "bg-muted")}>
                   <Icon className={cn("size-4", active && "text-accent")} strokeWidth={1.75} />
+                  {item.to === "/bot" && runningBots > 0 && (
+                    <span className="absolute right-0 top-0 grid min-w-3.5 place-items-center rounded-full bg-buy px-0.5 text-[8px] font-semibold text-buy-foreground">
+                      {runningBots}
+                    </span>
+                  )}
                 </span>
                 {item.label}
               </Link>
@@ -122,9 +133,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         position="top-center"
         toastOptions={{
           style: {
-            background: "#181C23",
-            border: "1px solid #252A33",
-            color: "#F1F3F6",
+            background: "var(--color-popover)",
+            border: "1px solid var(--color-border)",
+            color: "var(--color-popover-foreground)",
           },
         }}
       />

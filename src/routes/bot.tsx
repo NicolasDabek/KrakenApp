@@ -8,6 +8,7 @@ import {
   CandlestickChart,
   CircleDot,
   CirclePlus,
+  Combine,
   Cloud,
   Compass,
   Copy,
@@ -48,6 +49,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import {
+  applyStressScenario,
   backtestBot,
   botBlueprint,
   botDeployed,
@@ -71,11 +73,13 @@ import {
   profitDefaults,
   RISK_PRESETS,
   riskPresetFor,
+  STRESS_SCENARIOS,
   walkForward,
   evaluateDesk,
   type BacktestResult,
   type OptRow,
   type StrategyScore,
+  type StressScenarioId,
   type WalkForwardResult,
 } from "@/lib/trading/bots";
 import { fetchOhlc, fetchOhlcHistory } from "@/lib/trading/functions";
@@ -117,11 +121,12 @@ const KIND_ICON: Record<BotKind, typeof Grip> = {
   obv: Radio,
   div: Split,
   confirm: BadgeCheck,
+  mtf: Combine,
 };
 
 const KIND_GROUPS: { title: string; ids: BotKind[] }[] = [
   { title: "Accumulation", ids: ["grid", "dca"] },
-  { title: "Reversion", ids: ["rsi", "bollinger", "stoch", "vwap", "cci", "meanrev", "keltner", "williams", "mfi", "div"] },
+  { title: "Reversion", ids: ["rsi", "bollinger", "stoch", "vwap", "cci", "meanrev", "keltner", "williams", "mfi", "div", "mtf"] },
   { title: "Tendance", ids: ["ema", "sma", "macd", "breakout", "supertrend", "adx", "roc", "ichimoku", "psar", "ha", "obv", "confirm"] },
   { title: "Court terme", ids: ["scalp", "volume", "engulf"] },
 ];
@@ -318,6 +323,19 @@ function Cockpit({ venue }: { venue: BotVenue }) {
           Tout mettre en pause
         </Button>
       )}
+      {running.length >= 2 && (
+        <Button
+          variant="outline"
+          className="col-span-3"
+          onClick={() => {
+            const res = useTradingStore.getState().rebalanceAllocations(venue);
+            if (!res.ok) toast.message(res.message);
+          }}
+        >
+          <Percent className="size-3.5" />
+          Réallouer le capital (perf.)
+        </Button>
+      )}
       {venue === "live" && mine.length > 0 && (
         confirmPanic ? (
           <ConfirmBar
@@ -406,6 +424,11 @@ function Lab() {
   const [days, setDays] = useState(30);
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<StrategyScore[] | null>(null);
+  const [stressId, setStressId] = useState<StressScenarioId | null>(null);
+  const [stressBusy, setStressBusy] = useState(false);
+  const [stressRows, setStressRows] = useState<
+    { id: StressScenarioId; label: string; pnlPct: number; sharpe: number; maxDd: number }[] | null
+  >(null);
 
   const run = async () => {
     setBusy(true);
@@ -433,13 +456,54 @@ function Lab() {
     }
   };
 
+  const runStress = async (id: StressScenarioId) => {
+    setStressBusy(true);
+    setStressId(id);
+    try {
+      const fetchInterval = backtestFetchInterval(days, 60);
+      const since = Math.floor(Date.now() / 1000) - days * 86_400;
+      const hist = await fetchOhlcHistory({ data: { pair, interval: fetchInterval, since, days } });
+      if (hist.candles.length < 40) {
+        toast.message("Historique trop court pour le stress");
+        return;
+      }
+      const stressed = applyStressScenario(hist.candles, id);
+      const kinds = ["rsi", "ema", "confirm", "mtf", "bollinger"] as const;
+      const out: { id: StressScenarioId; label: string; pnlPct: number; sharpe: number; maxDd: number }[] = [];
+      for (const kind of kinds) {
+        const params = defaultParams(kind, stressed[stressed.length - 1]?.close ?? 100);
+        const result = backtestBot(kind, params, 200, stressed, feeRate, pair, {
+          startingBalance: 10_000,
+          slippageBps: 5,
+          interval: hist.interval,
+          requestedDays: days,
+        });
+        if (!result) continue;
+        out.push({
+          id,
+          label: BOT_KIND_BY_ID[kind]?.title ?? kind,
+          pnlPct: result.pnlPct,
+          sharpe: result.sharpe,
+          maxDd: result.maxDrawdownPct,
+        });
+      }
+      out.sort((a, b) => b.sharpe - a.sharpe);
+      setStressRows(out);
+      if (!out.length) toast.message("Aucun résultat sous stress");
+    } catch {
+      toast.message("Stress test indisponible");
+    } finally {
+      setStressBusy(false);
+    }
+  };
+
   return (
     <div className="mt-4 rounded-lg border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium">Laboratoire</p>
           <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-            Backtest les 27 stratégies sur la même fenêtre, classées par Calmar.
+            Backtest les stratégies sur la même fenêtre, classées par Calmar. Scénarios de stress optionnels.
           </p>
         </div>
       </div>
@@ -450,6 +514,7 @@ function Lab() {
             onChange={(e) => {
               setPair(e.target.value);
               setRows(null);
+              setStressRows(null);
             }}
             className="h-11 w-full rounded-md border border-border bg-muted px-3 text-sm text-foreground"
           >
@@ -469,6 +534,7 @@ function Lab() {
                 onClick={() => {
                   setDays(d);
                   setRows(null);
+                  setStressRows(null);
                 }}
                 className={cn(
                   "h-9 rounded-full px-3 text-xs font-medium",
@@ -498,9 +564,43 @@ function Lab() {
           ))}
         </ul>
       )}
+      <div className="mt-4 border-t border-border pt-3">
+        <p className="text-xs font-medium text-muted-foreground">Stress (série OHLC modifiée)</p>
+        <div className="mt-2 flex flex-wrap gap-1">
+          {STRESS_SCENARIOS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              disabled={stressBusy}
+              onClick={() => void runStress(s.id)}
+              className={cn(
+                "h-8 rounded-full px-3 text-[11px] font-medium",
+                stressId === s.id && stressRows
+                  ? "bg-foreground text-background"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              {stressBusy && stressId === s.id ? "…" : s.label}
+            </button>
+          ))}
+        </div>
+        {stressRows && stressRows.length > 0 && (
+          <ul className="mt-2 space-y-1">
+            {stressRows.map((row) => (
+              <li key={row.label} className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2 text-xs">
+                <span className="truncate">{row.label}</span>
+                <span className={cn("font-mono tabular-nums", row.pnlPct >= 0 ? "text-buy" : "text-sell")}>
+                  {formatPct(row.pnlPct)} · DD {formatPct(row.maxDd)} · {row.sharpe.toFixed(1)}σ
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
+
 
 function LivePanel() {
   const connection = useTradingStore((s) => s.connection);
@@ -2033,6 +2133,102 @@ function KindParamsFields({
             <NumField label="Survente" value={params.oversold ?? 35} onChange={(v) => patch({ oversold: v })} />
             <NumField label="Surachat" value={params.overbought ?? 70} onChange={(v) => patch({ overbought: v })} />
           </div>
+        </div>
+      )}
+      {kind === "mtf" && (
+        <div className="space-y-2">
+          <p className="text-xs leading-relaxed text-subtle">
+            RSI croisé sur l’intervalle du bot plus 1–2 TF supplémentaires (OHLC Kraken séparés). Majority = vote ;
+            higherAgree = le TF le plus long doit confirmer.
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            <NumField label="Période RSI" value={params.rsiPeriod ?? 14} onChange={(v) => patch({ rsiPeriod: v })} />
+            <NumField label="Survente" value={params.oversold ?? 30} onChange={(v) => patch({ oversold: v })} />
+            <NumField label="Surachat" value={params.overbought ?? 70} onChange={(v) => patch({ overbought: v })} />
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {(
+              [
+                { id: "majority", label: "Majorité" },
+                { id: "higherAgree", label: "TF haut d’accord" },
+              ] as const
+            ).map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => patch({ mtfMode: m.id })}
+                className={cn(
+                  "h-8 rounded-full px-3 text-xs font-medium",
+                  (params.mtfMode ?? "majority") === m.id
+                    ? "bg-foreground text-background"
+                    : "bg-muted text-muted-foreground",
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {(
+              [
+                { label: "15+60+240", intervals: [60, 240] },
+                { label: "5+15+60", intervals: [15, 60] },
+                { label: "30+60+240", intervals: [60, 240] },
+              ] as const
+            ).map((pre) => {
+              const cur = (params.mtfIntervals ?? [60, 240]).join(",");
+              const on = cur === pre.intervals.join(",");
+              return (
+                <button
+                  key={pre.label}
+                  type="button"
+                  onClick={() => patch({ mtfIntervals: [...pre.intervals] })}
+                  className={cn(
+                    "h-8 rounded-full px-3 text-xs font-medium",
+                    on ? "bg-foreground text-background" : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {pre.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {kindNeedsCandles(kind) && (
+        <div className="space-y-2 rounded-md border border-border bg-muted/40 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium">Auto-optimisation (walk-forward)</p>
+              <p className="text-[11px] leading-relaxed text-subtle">
+                Paper recommandé. Sur le réel, activer aussi « Auto-opt live » dans Paramètres (surapprentissage).
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => patch({ autoOpt: !params.autoOpt })}
+              className={cn(
+                "h-8 rounded-full px-3 text-xs font-medium",
+                params.autoOpt ? "bg-buy text-buy-foreground" : "bg-muted text-muted-foreground",
+              )}
+            >
+              {params.autoOpt ? "ON" : "OFF"}
+            </button>
+          </div>
+          {params.autoOpt && (
+            <div className="grid grid-cols-2 gap-2">
+              <NumField
+                label="Tous les (jours)"
+                value={Math.round((params.autoOptEveryMs ?? 7 * 86400000) / 86400000)}
+                onChange={(v) => patch({ autoOptEveryMs: Math.max(1, v) * 86400000 })}
+              />
+              <NumField
+                label="Sharpe OOS min"
+                value={params.autoOptMinOosSharpe ?? 0}
+                onChange={(v) => patch({ autoOptMinOosSharpe: v })}
+              />
+            </div>
+          )}
         </div>
       )}
     </>

@@ -23,7 +23,7 @@ import type {
   TapeTrade,
   Ticker,
 } from "./types";
-import { applyPaperFill, botInventoryQty, botMark, DEFAULT_PAPER, dropFormingCandle, EMPTY_STATS, evaluateBot, evaluateDesk, flattenPaper, kindNeedsCandles, kindTitle, paperEquity, parseBotBlueprints, resetPaperAccount, snapshotEquity } from "./bots.ts";
+import { allocateByPerformance, applyPaperFill, botAllocScore, botInventoryQty, botMark, DEFAULT_PAPER, dropFormingCandle, EMPTY_STATS, evaluateBot, evaluateDesk, flattenPaper, gatedOptimizeBot, kindNeedsCandles, kindTitle, mtfIntervalsOf, paperEquity, parseBotBlueprints, resetPaperAccount, snapshotEquity } from "./bots.ts";
 import { formatKrakenVolume, uid } from "./format.ts";
 import { krakenAddOrder, krakenBalance, krakenCancel, krakenClosePosition, krakenConvert, krakenPlaceOrder, krakenQueryOrder, krakenSnapshot } from "./functions.ts";
 import { DEFAULT_PAIR, PAIR_BY_ID, toEurPair } from "./pairs.ts";
@@ -58,7 +58,14 @@ const DEFAULT_SETTINGS: Settings = {
   deskDailyLoss: 0,
   deskDrawdownPct: 0,
   deskMaxExposurePct: 0,
+  cancelOrdersOnHalt: true,
+  allocEnabled: false,
+  allocMin: 0.05,
+  allocMax: 0.5,
+  autoOptLive: false,
 };
+
+let lastAllocAt = 0;
 
 const DEFAULT_CONNECTION: ConnectionConfig = {
   baseUrl: "",
@@ -144,6 +151,9 @@ type TradingState = {
   setBotCandles: (bag: Record<string, Candle[]>) => void;
   runBots: () => void;
   pauseAllBots: (venue?: BotVenue, opts?: { silent?: boolean; note?: string }) => void;
+  cancelOpenOrdersOnHalt: () => Promise<{ ok: boolean; message: string; cancelled: number }>;
+  rebalanceAllocations: (venue?: BotVenue, opts?: { silent?: boolean }) => { ok: boolean; message: string };
+  runGatedAutoOpt: () => Promise<{ ok: boolean; message: string }>;
   updateBot: (id: string, patch: Partial<Pick<Bot, "name" | "sizeQuote" | "params" | "interval" | "pair">>) => void;
   duplicateBot: (id: string) => Bot | null;
   cloneBotToPair: (id: string, pair: string) => Bot | null;
@@ -1307,6 +1317,147 @@ export const useTradingStore = create<TradingState>()(
         }
       },
 
+      cancelOpenOrdersOnHalt: async () => {
+        const settings = get().settings;
+        if (settings.cancelOrdersOnHalt === false) {
+          return { ok: true, message: "Annulation ordres désactivée.", cancelled: 0 };
+        }
+        const { apiKey, apiSecret } = get().connection;
+        if (!apiKey || !apiSecret) return { ok: false, message: "Clés Kraken manquantes.", cancelled: 0 };
+        const livePairs = new Set(
+          get()
+            .bots.filter((b) => b.venue === "live")
+            .map((b) => toEurPair(b.pair)),
+        );
+        const open = get().krakenOrders.filter((o) => o.status === "open");
+        const targets = open.filter((o) => {
+          const pair = toEurPair(o.pair);
+          if (livePairs.has(pair)) return true;
+          const note = o.note ?? "";
+          return /bot|Bot|grille|RSI|MTF|Nautilus/i.test(note);
+        });
+        let cancelled = 0;
+        for (const order of targets) {
+          const res = await krakenCancel({ data: { apiKey, apiSecret, txid: order.id } });
+          if (res.ok) {
+            cancelled += 1;
+            set({
+              krakenOrders: get().krakenOrders.map((o) =>
+                o.id === order.id ? { ...o, status: "cancelled", updatedAt: Date.now() } : o,
+              ),
+            });
+          }
+        }
+        if (cancelled > 0) {
+          toast.message(`Stop bureau · ${cancelled} ordre${cancelled > 1 ? "s" : ""} Kraken annulé${cancelled > 1 ? "s" : ""}`);
+          void get().syncKraken("light");
+        }
+        return {
+          ok: true,
+          message: cancelled ? `${cancelled} annulé(s)` : "Aucun ordre ouvert sur les paires bots",
+          cancelled,
+        };
+      },
+
+      rebalanceAllocations: (venue, opts) => {
+        const settings = get().settings;
+        const minW = settings.allocMin ?? 0.05;
+        const maxW = settings.allocMax ?? 0.5;
+        const pool = get().bots.filter((b) => b.status === "running" && (!venue || b.venue === venue));
+        if (pool.length < 2) return { ok: false, message: "Il faut ≥2 bots actifs pour réallouer." };
+        const rows = allocateByPerformance(
+          pool.map((b) => ({
+            id: b.id,
+            score: botAllocScore(b),
+            sizeQuote: b.sizeQuote,
+            atrRiskPct: b.params.atrRiskPct,
+            budgetQuote: b.params.budgetQuote,
+          })),
+          { min: minW, max: maxW },
+        );
+        const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+        set({
+          bots: get().bots.map((b) => {
+            const a = byId[b.id];
+            if (!a) return b;
+            return {
+              ...b,
+              sizeQuote: Math.max(10, Math.round(a.sizeQuote * 100) / 100),
+              params: {
+                ...b.params,
+                ...(a.atrRiskPct != null ? { atrRiskPct: Math.round(a.atrRiskPct * 1000) / 1000 } : {}),
+                ...(a.budgetQuote != null ? { budgetQuote: Math.round(a.budgetQuote * 100) / 100 } : {}),
+              },
+              runtime: { ...b.runtime, allocWeight: a.weight },
+              lastNote: `Allocation ${(a.weight * 100).toFixed(0)} % · taille ${Math.round(a.sizeQuote)} EUR`,
+            };
+          }),
+        });
+        lastAllocAt = Date.now();
+        if (!opts?.silent) toast.message("Capital réalloué selon la performance");
+        return { ok: true, message: `${rows.length} bots réalloués` };
+      },
+
+      runGatedAutoOpt: async () => {
+        const settings = get().settings;
+        const now = Date.now();
+        const candidates = get().bots.filter((b) => {
+          if (b.status !== "running" || !b.params.autoOpt) return false;
+          if (b.venue === "live" && !settings.autoOptLive) return false;
+          const every = b.params.autoOptEveryMs ?? 7 * 24 * 60 * 60 * 1000;
+          const last = b.runtime.lastAutoOptAt ?? 0;
+          return now - last >= every;
+        });
+        if (!candidates.length) return { ok: true, message: "Rien à optimiser." };
+        const bot = candidates[0]!;
+        const pair = toEurPair(bot.pair);
+        const candleKey = `${pair}:${bot.interval}`;
+        const candles = get().botCandles[candleKey] ?? get().botCandles[`${bot.pair}:${bot.interval}`];
+        if (!candles || candles.length < 80) {
+          return { ok: false, message: `Auto-opt ${bot.name}: chandeliers insuffisants` };
+        }
+        const feeRate = bot.venue === "paper" ? get().paper.feeRate : get().settings.takerFee;
+        const gated = gatedOptimizeBot(bot.kind, bot.params, bot.sizeQuote, candles, feeRate, pair, {
+          minOosSharpe: bot.params.autoOptMinOosSharpe ?? 0,
+          interval: bot.interval,
+        });
+        if (!gated.ok || !gated.params) {
+          set({
+            bots: get().bots.map((b) =>
+              b.id === bot.id
+                ? {
+                    ...b,
+                    runtime: { ...b.runtime, lastAutoOptAt: now },
+                    lastNote: `Auto-opt refusé · ${gated.reason}`,
+                  }
+                : b,
+            ),
+          });
+          return { ok: false, message: gated.reason };
+        }
+        set({
+          bots: get().bots.map((b) =>
+            b.id === bot.id
+              ? {
+                  ...b,
+                  params: {
+                    ...gated.params!,
+                    autoOpt: b.params.autoOpt,
+                    autoOptEveryMs: b.params.autoOptEveryMs,
+                    autoOptMinOosSharpe: b.params.autoOptMinOosSharpe,
+                    mtfIntervals: b.params.mtfIntervals,
+                    mtfMode: b.params.mtfMode,
+                  },
+                  runtime: { ...b.runtime, lastAutoOptAt: now },
+                  lastNote: `Auto-opt OK · ${gated.reason}`,
+                }
+              : b,
+          ),
+        });
+        toast.message(`Auto-opt · ${bot.name}`, { description: gated.reason });
+        return { ok: true, message: gated.reason };
+      },
+
       syncKraken: async (mode = "full") => {
         const { apiKey, apiSecret } = get().connection;
         if (!apiKey || !apiSecret) {
@@ -1575,8 +1726,16 @@ export const useTradingStore = create<TradingState>()(
         if (liveDesk.halt && running.some((b) => b.venue === "live")) {
           get().pauseAllBots("live", { note: liveDesk.note ?? "Stop bureau" });
           pingFill(settings, "Nautilus", liveDesk.note ?? "Stop bureau");
+          void get().cancelOpenOrdersOnHalt();
           return;
         }
+        if (settings.allocEnabled && now - lastAllocAt > 15 * 60_000) {
+          const paperN = running.filter((b) => b.venue === "paper").length;
+          const liveN = running.filter((b) => b.venue === "live").length;
+          if (paperN >= 2) get().rebalanceAllocations("paper", { silent: true });
+          if (liveN >= 2) get().rebalanceAllocations("live", { silent: true });
+        }
+
         const nextBots: Bot[] = get().bots.map((bot): Bot => {
           if (bot.status !== "running") return bot;
           const pair = toEurPair(bot.pair);
@@ -1600,6 +1759,24 @@ export const useTradingStore = create<TradingState>()(
             if (bot.lastNote.startsWith("Chargement")) return bot;
             botsChanged = true;
             return { ...bot, pair, lastNote: "Chargement des chandeliers…" };
+          }
+          const multiCandles: Record<number, import("./types").Candle[]> | undefined =
+            bot.kind === "mtf"
+              ? Object.fromEntries(
+                  mtfIntervalsOf(bot)
+                    .map((tf) => {
+                      const raw =
+                        get().botCandles[`${pair}:${tf}`] ?? get().botCandles[`${bot.pair}:${tf}`];
+                      const closed = dropFormingCandle(raw, tf, now);
+                      return closed && closed.length ? ([tf, closed] as const) : null;
+                    })
+                    .filter((x): x is readonly [number, import("./types").Candle[]] => x != null),
+                )
+              : undefined;
+          if (bot.kind === "mtf" && (!multiCandles || Object.keys(multiCandles).length < 2)) {
+            if (bot.lastNote.startsWith("Multi-TF")) return bot;
+            botsChanged = true;
+            return { ...bot, pair, lastNote: "Multi-TF : chargement des intervalles…" };
           }
           if (bot.runtime.inFlight) {
             const since = bot.runtime.inFlightAt ?? bot.lastActionAt ?? 0;
@@ -1670,6 +1847,7 @@ export const useTradingStore = create<TradingState>()(
               now,
               ticker,
               candles,
+              multiCandles,
               equity: bot.venue === "paper" ? paperEq : liveEq || paperEq,
               quoteBudget:
                 bot.venue === "paper"

@@ -98,16 +98,18 @@ function makeBot(kind: BotKind, extra: Partial<Bot> = {}): Bot {
 }
 
 describe("catalog", () => {
-  it("registers 27 named strategies with EUR-friendly defaults", () => {
-    assert.equal(BOT_KINDS.length, 27);
+  it("registers 28 named strategies with EUR-friendly defaults", () => {
+    assert.equal(BOT_KINDS.length, 28);
     const ids = BOT_KINDS.map((k) => k.id);
-    assert.equal(new Set(ids).size, 27);
+    assert.equal(new Set(ids).size, 28);
     assert.ok(ids.includes("mfi"));
     assert.ok(ids.includes("engulf"));
     assert.ok(ids.includes("obv"));
     assert.ok(ids.includes("div"));
     assert.ok(ids.includes("confirm"));
+    assert.ok(ids.includes("mtf"));
     assert.equal(kindTitle("rsi"), "Reversion RSI");
+    assert.equal(kindTitle("mtf"), "Multi-TF RSI");
     assert.equal(kindNeedsCandles("grid"), false);
     assert.equal(kindNeedsCandles("dca"), false);
     assert.equal(kindNeedsCandles("rsi"), true);
@@ -1707,4 +1709,3 @@ describe("desk risk / monte carlo / confirmation", () => {
     assert.equal(poor.fills.filter((f) => f.side === "buy").length, 0);
   });
 });
-

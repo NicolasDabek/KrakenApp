@@ -78,10 +78,43 @@ function SettingsPage() {
         </li>
       </ul>
 
+      <ul className="mt-6 divide-y divide-border rounded-lg border border-border bg-card">
+        <li className="flex items-center justify-between gap-4 px-4 py-4">
+          <div>
+            <p className="text-sm font-medium">Annuler les ordres au stop bureau</p>
+            <p className="text-xs text-muted-foreground">
+              Sur halt live : pause des bots puis annulation des ordres ouverts sur les paires bots (agressif).
+            </p>
+          </div>
+          <Toggle
+            on={settings.cancelOrdersOnHalt !== false}
+            onChange={(v) => setSettings({ cancelOrdersOnHalt: v })}
+          />
+        </li>
+        <li className="flex items-center justify-between gap-4 px-4 py-4">
+          <div>
+            <p className="text-sm font-medium">Allocation auto par performance</p>
+            <p className="text-xs text-muted-foreground">
+              Toutes les ~15 min, redistribue sizeQuote entre bots actifs (min/max ci-dessous). Paper-safe.
+            </p>
+          </div>
+          <Toggle on={Boolean(settings.allocEnabled)} onChange={(v) => setSettings({ allocEnabled: v })} />
+        </li>
+        <li className="flex items-center justify-between gap-4 px-4 py-4">
+          <div>
+            <p className="text-sm font-medium">Auto-opt live autorisé</p>
+            <p className="text-xs text-muted-foreground">
+              Laisse les bots réels appliquer une optimisation walk-forward (risque de surapprentissage).
+            </p>
+          </div>
+          <Toggle on={Boolean(settings.autoOptLive)} onChange={(v) => setSettings({ autoOptLive: v })} />
+        </li>
+      </ul>
+
       <div className="mt-6 rounded-lg border border-border bg-card p-4">
         <p className="text-sm font-medium">Coupe-circuit bureau</p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          0 = désactivé. Perte jour et drawdown mettent tous les bots en pause. Exposition max bloque seulement les nouveaux achats.
+          0 = désactivé. Perte jour et drawdown mettent tous les bots en pause (et peuvent annuler les ordres Kraken). Exposition max bloque seulement les nouveaux achats.
         </p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <label className="block text-xs text-muted-foreground">
@@ -109,6 +142,26 @@ function SettingsPage() {
               className="mt-1 font-mono tabular-nums"
               value={settings.deskMaxExposurePct ?? 0}
               onChange={(e) => setSettings({ deskMaxExposurePct: Math.max(0, Number(e.target.value) || 0) })}
+            />
+          </label>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <label className="block text-xs text-muted-foreground">
+            Alloc min (0–1)
+            <Input
+              inputMode="decimal"
+              className="mt-1 font-mono tabular-nums"
+              value={settings.allocMin ?? 0.05}
+              onChange={(e) => setSettings({ allocMin: Math.min(1, Math.max(0, Number(e.target.value) || 0)) })}
+            />
+          </label>
+          <label className="block text-xs text-muted-foreground">
+            Alloc max (0–1)
+            <Input
+              inputMode="decimal"
+              className="mt-1 font-mono tabular-nums"
+              value={settings.allocMax ?? 0.5}
+              onChange={(e) => setSettings({ allocMax: Math.min(1, Math.max(0, Number(e.target.value) || 0)) })}
             />
           </label>
         </div>

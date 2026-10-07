@@ -183,6 +183,12 @@ export const BOT_KINDS: {
     blurb: "N’entre que si EMA, MACD et RSI sont d’accord — moins de faux signaux.",
     needsCandles: true,
   },
+  {
+    id: "mtf",
+    title: "Multi-TF RSI",
+    blurb: "Vote RSI croisé sur 2–3 intervalles réels (pas le même tick recopié).",
+    needsCandles: true,
+  },
 ];
 
 export const BOT_KIND_BY_ID = Object.fromEntries(BOT_KINDS.map((k) => [k.id, k]));
@@ -357,6 +363,7 @@ const MEAN_REVERSION = new Set<BotKind>([
   "williams",
   "mfi",
   "div",
+  "mtf",
 ]);
 
 const RANGE_BREAK = new Set<BotKind>(["breakout", "volume", "engulf"]);
@@ -438,6 +445,15 @@ function baseParams(kind: BotKind, last: number): BotParams {
   if (kind === "obv") return { fast: 20 };
   if (kind === "div") return { rsiPeriod: 14, oversold: 40, overbought: 70 };
   if (kind === "confirm") return { fast: 9, slow: 21, rsiPeriod: 14, oversold: 35, overbought: 70, macdFast: 12, macdSlow: 26, macdSignal: 9 };
+  if (kind === "mtf") {
+    return {
+      rsiPeriod: 14,
+      oversold: 30,
+      overbought: 70,
+      mtfIntervals: [60, 240],
+      mtfMode: "majority",
+    };
+  }
   return { macdFast: 12, macdSlow: 26, macdSignal: 9 };
 }
 
@@ -468,6 +484,8 @@ export type BotEvalCtx = {
   now: number;
   ticker: Ticker;
   candles?: Candle[];
+  /** Extra closed OHLC series by interval minutes (for mtf). */
+  multiCandles?: Record<number, Candle[]>;
   equity?: number;
   barHigh?: number;
   barLow?: number;
@@ -546,6 +564,8 @@ function evaluateRaw(bot: Bot, ctx: BotEvalCtx): { fills: BotFill[]; runtime: Bo
       return evalDiv(bot, ctx);
     case "confirm":
       return evalConfirm(bot, ctx);
+    case "mtf":
+      return evalMtf(bot, ctx);
   }
 }
 
@@ -2024,6 +2044,155 @@ function evalConfirm(bot: Bot, ctx: BotEvalCtx): { fills: BotFill[]; runtime: Bo
   };
 }
 
+/** Intervals used by an mtf bot: primary first, then extras (deduped, max 3). */
+export function mtfIntervalsOf(bot: Pick<Bot, "interval" | "params">): number[] {
+  const primary = Math.max(1, Math.round(bot.interval || 15));
+  const extra = (bot.params.mtfIntervals ?? [60, 240])
+    .map((n) => Math.round(n))
+    .filter((n) => n > 0 && n !== primary);
+  return [primary, ...[...new Set(extra)].sort((a, b) => a - b)].slice(0, 3);
+}
+
+/** Aggregate lower-TF candles into a higher TF (backtest fallback when multi OHLC missing). */
+export function resampleCandles(candles: Candle[], fromMin: number, toMin: number): Candle[] {
+  if (!(fromMin > 0) || !(toMin > 0) || toMin <= fromMin || candles.length === 0) return candles.slice();
+  const ratio = Math.max(2, Math.round(toMin / fromMin));
+  const out: Candle[] = [];
+  for (let i = 0; i < candles.length; i += ratio) {
+    const chunk = candles.slice(i, i + ratio);
+    if (!chunk.length) continue;
+    const first = chunk[0]!;
+    const last = chunk[chunk.length - 1]!;
+    let high = first.high;
+    let low = first.low;
+    let volume = 0;
+    for (const c of chunk) {
+      high = Math.max(high, c.high);
+      low = Math.min(low, c.low);
+      volume += c.volume;
+    }
+    out.push({ time: first.time, open: first.open, high, low, close: last.close, volume });
+  }
+  return out;
+}
+
+type RsiCross = "BUY" | "SELL" | "HOLD";
+
+function rsiCrossOnCandles(
+  candles: Candle[] | undefined,
+  period: number,
+  os: number,
+  ob: number,
+): { action: RsiCross; rsi: number | null } {
+  if (!candles || candles.length < period + 3) return { action: "HOLD", rsi: null };
+  const closes = candles.map((c) => c.close);
+  const series = rsi(closes, period);
+  const r = series[series.length - 1];
+  const prev = series[series.length - 2];
+  if (r == null || prev == null) return { action: "HOLD", rsi: r ?? null };
+  if (prev >= os && r < os) return { action: "BUY", rsi: r };
+  if (prev <= ob && r > ob) return { action: "SELL", rsi: r };
+  return { action: "HOLD", rsi: r };
+}
+
+function resolveMtfVote(
+  votes: { BUY: number; SELL: number; HOLD: number },
+  mode: "majority" | "higherAgree",
+  primaryAction: RsiCross,
+  highestAction: RsiCross,
+): RsiCross {
+  if (mode === "higherAgree") {
+    if (primaryAction === "BUY" && highestAction === "BUY") return "BUY";
+    if (primaryAction === "SELL" && highestAction === "SELL") return "SELL";
+    return "HOLD";
+  }
+  if (votes.BUY > votes.SELL && votes.BUY > votes.HOLD) return "BUY";
+  if (votes.SELL > votes.BUY && votes.SELL > votes.HOLD) return "SELL";
+  return "HOLD";
+}
+
+function evalMtf(bot: Bot, ctx: BotEvalCtx): { fills: BotFill[]; runtime: BotRuntime; note: string } {
+  const runtime: BotRuntime = { ...bot.runtime };
+  const period = Math.max(2, bot.params.rsiPeriod ?? 14);
+  const os = bot.params.oversold ?? 30;
+  const ob = bot.params.overbought ?? 70;
+  const mode = bot.params.mtfMode === "higherAgree" ? "higherAgree" : "majority";
+  const intervals = mtfIntervalsOf(bot);
+  const primary = intervals[0]!;
+
+  const seriesByTf: { tf: number; candles: Candle[] }[] = [];
+  for (const tf of intervals) {
+    let series = ctx.multiCandles?.[tf];
+    if ((!series || series.length < period + 3) && ctx.candles && tf === primary) series = ctx.candles;
+    if ((!series || series.length < period + 3) && ctx.candles && tf !== primary) {
+      series = resampleCandles(ctx.candles, primary, tf);
+    }
+    if (ctx.closedOnly && series) series = dropFormingCandle(series, tf, ctx.now) ?? series;
+    if (series && series.length >= period + 3) seriesByTf.push({ tf, candles: series });
+  }
+
+  if (seriesByTf.length < 2) {
+    return { fills: [], runtime, note: "Multi-TF : chandeliers insuffisants sur ≥2 intervalles." };
+  }
+
+  const primarySeries = seriesByTf.find((s) => s.tf === primary)?.candles ?? seriesByTf[0]!.candles;
+  const lastCandle = primarySeries[primarySeries.length - 1]!;
+  if (runtime.lastCandleTime === lastCandle.time) {
+    return {
+      fills: [],
+      runtime,
+      note: runtime.inPosition ? `Long · MTF ${fmt(runtime.lastRsi)}` : `Hors marché · MTF ${fmt(runtime.lastRsi)}`,
+    };
+  }
+
+  const votes = { BUY: 0, SELL: 0, HOLD: 0 };
+  const details: string[] = [];
+  let highestTf = -1;
+  let highestAction: RsiCross = "HOLD";
+  let primaryAction: RsiCross = "HOLD";
+  let primaryRsi: number | null = null;
+  for (const { tf, candles } of seriesByTf) {
+    const { action, rsi: r } = rsiCrossOnCandles(candles, period, os, ob);
+    votes[action] += 1;
+    details.push(`${tf}m:${action === "HOLD" ? "·" : action[0]}${r != null ? r.toFixed(0) : "?"}`);
+    if (tf === primary) {
+      primaryAction = action;
+      primaryRsi = r;
+    }
+    if (tf >= highestTf) {
+      highestTf = tf;
+      highestAction = action;
+    }
+  }
+
+  const action = resolveMtfVote(votes, mode, primaryAction, highestAction);
+  runtime.lastCandleTime = lastCandle.time;
+  runtime.lastRsi = primaryRsi ?? undefined;
+  runtime.lastClose = lastCandle.close;
+
+  const fills: BotFill[] = [];
+  if (action === "BUY" && !runtime.inPosition) {
+    const fillPx = px(ctx, "buy");
+    const qty = orderQty(bot, ctx, fillPx);
+    if (qty > 0) {
+      fills.push({ side: "buy", qty, price: fillPx, note: `MTF BUY · ${details.join(" ")}` });
+      markLong(runtime, qty, fillPx);
+    }
+  } else if (action === "SELL" && runtime.inPosition && runtime.positionQty) {
+    const fillPx = px(ctx, "sell");
+    fills.push({ side: "sell", qty: runtime.positionQty, price: fillPx, note: `MTF SELL · ${details.join(" ")}` });
+    markFlat(runtime);
+  }
+
+  return {
+    fills,
+    runtime,
+    note: fills.length
+      ? fills[0]!.note
+      : `MTF ${mode} · ${details.join(" ")} · ${runtime.inPosition ? "long" : "flat"}`,
+  };
+}
+
 function markLong(runtime: BotRuntime, qty: number, px: number) {
   runtime.inPosition = true;
   runtime.positionQty = qty;
@@ -2629,6 +2798,8 @@ export function backtestWarmup(kind: BotKind, params: BotParams): number {
       return n(params.rsiPeriod, 14) + 20;
     case "confirm":
       return Math.max(n(params.slow, 21), n(params.macdSlow, 26) + n(params.macdSignal, 9), n(params.rsiPeriod, 14)) + 8;
+    case "mtf":
+      return n(params.rsiPeriod, 14) + 8;
     default:
       return 48;
   }
@@ -2672,13 +2843,18 @@ export type OptRow = { params: BotParams; label: string; result: BacktestResult 
 export function paramVariants(kind: BotKind, base: BotParams): { params: BotParams; label: string }[] {
   const rows: { params: BotParams; label: string }[] = [{ params: base, label: "Actuel" }];
   const add = (label: string, p: Partial<BotParams>) => rows.push({ params: { ...base, ...p }, label });
-  if (kind === "rsi" || kind === "mfi" || kind === "stoch" || kind === "div" || kind === "confirm") {
+  if (kind === "rsi" || kind === "mfi" || kind === "stoch" || kind === "div" || kind === "confirm" || kind === "mtf") {
     for (const os of [20, 25, 30, 35]) {
       for (const ob of [65, 70, 75, 80]) add(`os ${os} / ob ${ob}`, { oversold: os, overbought: ob });
     }
     if (kind === "confirm") {
       add("EMA 8/21", { fast: 8, slow: 21 });
       add("EMA 12/26", { fast: 12, slow: 26 });
+    }
+    if (kind === "mtf") {
+      add("majority 15/60/240", { mtfIntervals: [60, 240], mtfMode: "majority" });
+      add("higherAgree 15/60/240", { mtfIntervals: [60, 240], mtfMode: "higherAgree" });
+      add("majority 5/15/60", { mtfIntervals: [15, 60], mtfMode: "majority" });
     }
   } else if (kind === "williams") {
     for (const os of [-90, -80, -70]) {
@@ -3074,6 +3250,178 @@ function mulberry32(seed: number) {
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Stress overlays for Lab (copies closes; OHLC high/low widened to the new close). */
+export type StressScenarioId = "crash" | "flash" | "spike";
+
+export function applyStressScenario(candles: Candle[], id: StressScenarioId): Candle[] {
+  if (candles.length < 10) return candles.slice();
+  const out = candles.map((c) => ({ ...c }));
+  if (id === "crash") {
+    const start = Math.floor(out.length * 0.7);
+    const base = out[start]!.close;
+    const drop = base * 0.3;
+    for (let i = 0; i < 5 && start + i < out.length; i++) {
+      const c = out[start + i]!;
+      const next = c.close - drop / 5;
+      out[start + i] = { ...c, close: next, low: Math.min(c.low, next), high: Math.max(c.high, next) };
+    }
+  } else if (id === "flash") {
+    const idx = Math.min(out.length - 2, Math.floor(out.length * 0.8));
+    const c = out[idx]!;
+    const drop = c.close * 0.2;
+    const down = c.close - drop;
+    out[idx] = { ...c, close: down, low: Math.min(c.low, down), high: Math.max(c.high, down) };
+    const n = out[idx + 1]!;
+    const up = n.close + drop;
+    out[idx + 1] = { ...n, close: up, high: Math.max(n.high, up), low: Math.min(n.low, up) };
+  } else {
+    const idx = Math.floor(out.length * 0.75);
+    const c = out[idx]!;
+    const up = c.close * 1.2;
+    out[idx] = { ...c, close: up, high: Math.max(c.high, up), low: Math.min(c.low, up) };
+  }
+  return out;
+}
+
+export const STRESS_SCENARIOS: { id: StressScenarioId; label: string }[] = [
+  { id: "crash", label: "Krach −30 % / 5 barres" },
+  { id: "flash", label: "Flash crash −20 % + rebond" },
+  { id: "spike", label: "Spike +20 %" },
+];
+
+export type AllocInput = {
+  id: string;
+  score: number;
+  sizeQuote: number;
+  atrRiskPct?: number;
+  budgetQuote?: number;
+};
+
+export type AllocResult = {
+  id: string;
+  weight: number;
+  sizeQuote: number;
+  atrRiskPct?: number;
+  budgetQuote?: number;
+};
+
+/**
+ * Performance-weighted capital shares. Clamps then renormalizes so weights sum to 1.
+ * Negative/zero scores get the floor only after a positive-total path; all-nonpositive → equal.
+ */
+export function allocateByPerformance(
+  rows: AllocInput[],
+  opts?: { min?: number; max?: number },
+): AllocResult[] {
+  if (rows.length === 0) return [];
+  const n = rows.length;
+  const minW = Math.max(0, Math.min(1 / n, opts?.min ?? 0.05));
+  const maxW = Math.max(minW, Math.min(1, opts?.max ?? 0.5));
+  const totalSize = rows.reduce((s, r) => s + Math.max(0, r.sizeQuote), 0);
+  const positive = rows.map((r) => Math.max(0, r.score));
+  const sumPos = positive.reduce((a, b) => a + b, 0);
+  let weights = rows.map((_, i) => (sumPos > 0 ? positive[i]! / sumPos : 1 / n));
+
+  for (let iter = 0; iter < 16; iter++) {
+    weights = weights.map((w) => Math.max(minW, Math.min(maxW, w)));
+    const sum = weights.reduce((a, b) => a + b, 0);
+    if (Math.abs(sum - 1) < 1e-9) break;
+    if (sum < 1) {
+      const need = 1 - sum;
+      const room = weights.map((w) => Math.max(0, maxW - w));
+      const roomSum = room.reduce((a, b) => a + b, 0);
+      if (roomSum < 1e-12) {
+        const s = weights.reduce((a, b) => a + b, 0) || 1;
+        weights = weights.map((w) => w / s);
+        break;
+      }
+      weights = weights.map((w, i) => w + (need * room[i]!) / roomSum);
+    } else {
+      const excess = sum - 1;
+      const spare = weights.map((w) => Math.max(0, w - minW));
+      const spareSum = spare.reduce((a, b) => a + b, 0);
+      if (spareSum < 1e-12) {
+        const s = weights.reduce((a, b) => a + b, 0) || 1;
+        weights = weights.map((w) => w / s);
+        break;
+      }
+      weights = weights.map((w, i) => w - (excess * spare[i]!) / spareSum);
+    }
+  }
+  const sum = weights.reduce((a, b) => a + b, 0) || 1;
+  weights = weights.map((w) => w / sum);
+
+  return rows.map((r, i) => {
+    const weight = weights[i]!;
+    const sizeQuote = totalSize > 0 ? totalSize * weight : r.sizeQuote;
+    const atrRiskPct =
+      r.atrRiskPct != null && r.atrRiskPct > 0 ? Math.max(0.05, r.atrRiskPct * weight * rows.length) : r.atrRiskPct;
+    const budgetQuote =
+      r.budgetQuote != null && r.budgetQuote > 0 ? Math.max(0, r.budgetQuote * weight * rows.length) : r.budgetQuote;
+    return { id: r.id, weight, sizeQuote, atrRiskPct, budgetQuote };
+  });
+}
+
+/** Score a live/paper bot for allocation (PnL + mild win-rate boost). */
+export function botAllocScore(bot: Bot): number {
+  const pnl = bot.stats.realizedPnl + (bot.runtime.dayPnl ?? 0);
+  const wr = botWinRate(bot.stats);
+  const closes = bot.stats.closes ?? 0;
+  const boost = closes >= 3 ? ((wr - 50) / 100) * Math.max(20, Math.abs(pnl) * 0.1) : 0;
+  return pnl + boost;
+}
+
+export type GatedOptResult = {
+  ok: boolean;
+  reason: string;
+  params?: BotParams;
+  label?: string;
+  oosSharpe?: number;
+  inSharpe?: number;
+};
+
+/**
+ * Optimize params then accept only if walk-forward out-of-sample Sharpe ≥ threshold.
+ * Uses Lab math (fees, calmar ranking) — not the old Bot fee-less argmax.
+ */
+export function gatedOptimizeBot(
+  kind: BotKind,
+  base: BotParams,
+  sizeQuote: number,
+  candles: Candle[],
+  feeRate: number,
+  pair: string,
+  opts: BacktestOpts & { minOosSharpe?: number } = {},
+): GatedOptResult {
+  const minOos = opts.minOosSharpe ?? 0;
+  const ranked = optimizeBot(kind, base, sizeQuote, candles, feeRate, pair, opts);
+  if (!ranked.length) return { ok: false, reason: "Aucune variante rentable sur l’échantillon." };
+  const best = ranked[0]!;
+  const wf = walkForward(kind, best.params, sizeQuote, candles, feeRate, pair, opts);
+  const oos = wf.outSample?.sharpe ?? Number.NEGATIVE_INFINITY;
+  const ins = wf.inSample?.sharpe ?? 0;
+  if (!(wf.outSample && wf.outSample.sells >= 1)) {
+    return { ok: false, reason: "Walk-forward OOS sans trade clôturé.", oosSharpe: oos, inSharpe: ins };
+  }
+  if (oos < minOos) {
+    return {
+      ok: false,
+      reason: `OOS Sharpe ${oos.toFixed(2)} < seuil ${minOos.toFixed(2)}`,
+      oosSharpe: oos,
+      inSharpe: ins,
+      label: best.label,
+    };
+  }
+  return {
+    ok: true,
+    reason: `Accepté · ${best.label} · OOS Sharpe ${oos.toFixed(2)}`,
+    params: best.params,
+    label: best.label,
+    oosSharpe: oos,
+    inSharpe: ins,
   };
 }
 

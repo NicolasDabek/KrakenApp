@@ -138,6 +138,16 @@ export type Settings = {
   deskDrawdownPct?: number;
   /** Block new buys when open bot inventory exceeds this % of equity. 0 = off. */
   deskMaxExposurePct?: number;
+  /** On desk halt for live: also cancel open Kraken orders on bot pairs. Default true. */
+  cancelOrdersOnHalt?: boolean;
+  /** Periodically re-weight running bot sizes by recent performance (paper by default). */
+  allocEnabled?: boolean;
+  /** Min capital weight per bot when allocEnabled. Default 0.05. */
+  allocMin?: number;
+  /** Max capital weight per bot when allocEnabled. Default 0.5. */
+  allocMax?: number;
+  /** Allow scheduled walk-forward-gated re-opt on live bots (dangerous). Default false. */
+  autoOptLive?: boolean;
 };
 
 export type RecurringBuy = {
@@ -200,7 +210,8 @@ export type BotKind =
   | "engulf"
   | "obv"
   | "div"
-  | "confirm";
+  | "confirm"
+  | "mtf";
 export type BotVenue = "paper" | "live";
 export type BotStatus = "idle" | "running" | "paused" | "error";
 
@@ -262,6 +273,10 @@ export type BotRuntime = {
   buyCoolUntil?: number;
   /** Book to restore if the in-flight Kraken order never confirms. */
   flightPrev?: BotRuntime;
+  /** Last successful gated auto-opt timestamp. */
+  lastAutoOptAt?: number;
+  /** Current desk allocation weight (0–1) when allocEnabled. */
+  allocWeight?: number;
 };
 
 export type BotStats = {
@@ -348,6 +363,16 @@ export type BotParams = {
   gridSlCooldownMin?: number;
   /** Cap EUR deployed by this bot (0 = unlimited). */
   budgetQuote?: number;
+  /** Multi-timeframe: extra intervals in minutes (primary = bot.interval). */
+  mtfIntervals?: number[];
+  /** majority = vote; higherAgree = primary action only if highest TF agrees. */
+  mtfMode?: "majority" | "higherAgree";
+  /** Enable scheduled parameter re-opt with walk-forward gate. */
+  autoOpt?: boolean;
+  /** Re-opt interval ms (default 7d). */
+  autoOptEveryMs?: number;
+  /** Minimum out-of-sample Sharpe to accept new params. Default 0. */
+  autoOptMinOosSharpe?: number;
 };
 
 export type BotEvent = {

@@ -33,7 +33,7 @@ const GROUPS = [
   {
     title: "Trading",
     items: [
-      { to: "/bot", title: "Bots", desc: "27 stratégies EUR, papier ou Kraken réel", icon: Bot },
+      { to: "/bot", title: "Bots", desc: "28 stratégies EUR, papier ou Kraken réel", icon: Bot },
       { to: "/alerts", title: "Alertes prix", desc: "Seuils haut / bas", icon: Bell },
       { to: "/dca", title: "Achats récurrents", desc: "DCA quotidien ou hebdo", icon: Repeat },
       { to: "/risk", title: "Taille de position", desc: "Risque %, R:R, marge", icon: Shield },

@@ -1,6 +1,15 @@
 import { afterEach, describe, it, mock } from "node:test";
 import assert from "node:assert/strict";
-import { getDepth, getOhlc, getOhlcHistory, getTickers, getTrades, parseTickers, pingKraken } from "./kraken.server.ts";
+import {
+  fetchWithRetry,
+  getDepth,
+  getOhlc,
+  getOhlcHistory,
+  getTickers,
+  getTrades,
+  parseTickers,
+  pingKraken,
+} from "./kraken.server.ts";
 
 afterEach(() => {
   mock.restoreAll();
@@ -35,7 +44,10 @@ describe("parseTickers", () => {
     assert.ok(Math.abs(btc!.changePct - ((90_000 - 88_000) / 88_000) * 100) < 1e-9);
     assert.equal(btc!.quoteVolume, 100 * 89_500);
     assert.ok(sol);
-    assert.equal(list.some((t) => t.id === "UNKNOWN"), false);
+    assert.equal(
+      list.some((t) => t.id === "UNKNOWN"),
+      false,
+    );
   });
 
   it("treats a zero open as a 0% change", () => {
@@ -219,7 +231,10 @@ describe("public REST helpers", () => {
         status: 200,
         json: async () => ({
           error: [],
-          result: { XLTCZEUR: [[1_700_000_000, "80", "81", "79", "80.5", "80", "4", "2"]], last: 1_700_000_060 },
+          result: {
+            XLTCZEUR: [[1_700_000_000, "80", "81", "79", "80.5", "80", "4", "2"]],
+            last: 1_700_000_060,
+          },
         }),
       } as Response;
     });
@@ -238,11 +253,43 @@ describe("public REST helpers", () => {
         status: 200,
         json: async () => ({
           error: [],
-          result: { XXBTZEUR: [[1_700_000_000, "100", "101", "99", "100", "100", "1", "1"]], last: 1_700_000_060 },
+          result: {
+            XXBTZEUR: [[1_700_000_000, "100", "101", "99", "100", "100", "1", "1"]],
+            last: 1_700_000_060,
+          },
         }),
       } as Response;
     });
     await getOhlc("XBTEUR", 7);
     assert.ok(seen.includes("interval=60"), seen);
+  });
+});
+
+describe("fetchWithRetry", () => {
+  afterEach(() => mock.restoreAll());
+  it("retries on 5xx / network errors then succeeds", async () => {
+    let n = 0;
+    mock.method(globalThis, "fetch", async () => {
+      n++;
+      if (n === 1) throw new Error("ECONNRESET");
+      if (n === 2) return { ok: false, status: 503 } as Response;
+      return { ok: true, status: 200 } as Response;
+    });
+    const res = await fetchWithRetry("https://x", 2, 1);
+    assert.equal(res.status, 200);
+    assert.equal(n, 3);
+  });
+  it("does not retry 4xx and gives up after the retry budget", async () => {
+    let n = 0;
+    mock.method(globalThis, "fetch", async () => {
+      n++;
+      return { ok: false, status: 400 } as Response;
+    });
+    assert.equal((await fetchWithRetry("https://x", 2, 1)).status, 400);
+    assert.equal(n, 1);
+    mock.method(globalThis, "fetch", async () => {
+      throw new Error("down");
+    });
+    await assert.rejects(() => fetchWithRetry("https://x", 1, 1), /down/);
   });
 });

@@ -66,3 +66,31 @@ export function downloadCsv(filename: string, rows: string[][]) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+/** Population std-dev of the last `period` closes (ported from Bot_Kraken_Typescript `calculateVolatility`). */
+export function closeVolatility(closes: number[], period: number): number {
+  if (!(period > 0) || closes.length < period) return 0;
+  const slice = closes.slice(-period);
+  const mean = slice.reduce((a, b) => a + b, 0) / period;
+  const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / period;
+  return Math.sqrt(variance);
+}
+
+/**
+ * Stop-loss / take-profit placed at a multiple of volatility from entry
+ * (ported from Bot_Kraken_Typescript `StopLossManager`). Short side mirrors the levels.
+ */
+export function volatilityStops(
+  entry: number,
+  volatility: number,
+  side: "buy" | "sell" = "buy",
+  slMult = 2,
+  tpMult = 3,
+) {
+  if (!(entry > 0) || !(volatility > 0)) return { stop: 0, target: 0 };
+  const dir = side === "buy" ? 1 : -1;
+  return {
+    stop: Math.max(0, entry - dir * slMult * volatility),
+    target: Math.max(0, entry + dir * tpMult * volatility),
+  };
+}

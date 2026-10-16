@@ -1,6 +1,15 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { downloadCsv, logReturns, pearson, rangePosition, rewardRisk, sizeFromRisk } from "./stats.ts";
+import {
+  closeVolatility,
+  downloadCsv,
+  logReturns,
+  pearson,
+  rangePosition,
+  rewardRisk,
+  sizeFromRisk,
+  volatilityStops,
+} from "./stats.ts";
 
 describe("rangePosition", () => {
   it("maps last inside the 24h range to 0..1", () => {
@@ -29,7 +38,14 @@ describe("logReturns / pearson", () => {
     assert.equal(pearson([1, 2, 3], [3, 2, 1]), 0);
     const xs = [1, 2, 3, 4, 5, 6];
     assert.ok(Math.abs(pearson(xs, xs) - 1) < 1e-9);
-    assert.ok(Math.abs(pearson(xs, xs.map((x) => -x)) + 1) < 1e-9);
+    assert.ok(
+      Math.abs(
+        pearson(
+          xs,
+          xs.map((x) => -x),
+        ) + 1,
+      ) < 1e-9,
+    );
     assert.equal(pearson([1, 1, 1, 1], [2, 3, 4, 5]), 0);
     assert.deepEqual(logReturns([]), []);
     assert.deepEqual(logReturns([5]), []);
@@ -65,14 +81,22 @@ describe("sizeFromRisk / rewardRisk", () => {
 describe("downloadCsv", () => {
   it("quotes cells and clicks a download link", () => {
     const clicks: string[] = [];
-    const g = globalThis as typeof globalThis & { document?: { createElement: (tag: string) => unknown } };
+    const g = globalThis as typeof globalThis & {
+      document?: { createElement: (tag: string) => unknown };
+    };
     const prevDoc = g.document;
     const prevCreate = URL.createObjectURL;
     const prevRevoke = URL.revokeObjectURL;
     g.document = {
       createElement: (tag: string) => {
         assert.equal(tag, "a");
-        const el = { href: "", download: "", click() { clicks.push(this.download); } };
+        const el = {
+          href: "",
+          download: "",
+          click() {
+            clicks.push(this.download);
+          },
+        };
         return el;
       },
     } as unknown as Document;
@@ -90,5 +114,17 @@ describe("downloadCsv", () => {
       URL.createObjectURL = prevCreate;
       URL.revokeObjectURL = prevRevoke;
     }
+  });
+});
+
+describe("closeVolatility / volatilityStops", () => {
+  it("computes population std-dev of the last N closes", () => {
+    assert.equal(closeVolatility([1, 2, 4, 4, 4, 5, 5, 7, 9], 8), 2);
+    assert.equal(closeVolatility([1, 2], 5), 0);
+  });
+  it("places stops at k×vol, mirrored for shorts", () => {
+    assert.deepEqual(volatilityStops(100, 2), { stop: 96, target: 106 });
+    assert.deepEqual(volatilityStops(100, 2, "sell"), { stop: 104, target: 94 });
+    assert.deepEqual(volatilityStops(100, 0), { stop: 0, target: 0 });
   });
 });

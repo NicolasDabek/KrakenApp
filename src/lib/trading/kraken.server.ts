@@ -6,13 +6,35 @@ const KRAKEN = "https://api.kraken.com/0/public";
 type CacheEntry = { at: number; data: unknown };
 const cache = new Map<string, CacheEntry>();
 
+/**
+ * Public GET with linear backoff on network errors, 429 and 5xx (ported from
+ * Bot_Kraken_Typescript `KrakenClient.publicRequest`). Kraken logical errors are not retried.
+ */
+export async function fetchWithRetry(
+  url: string,
+  retries = 2,
+  baseDelayMs = 300,
+): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(url, { headers: { "User-Agent": "Nautilus-Trading-Terminal/1.0" } });
+      if ((res.status === 429 || res.status >= 500) && attempt < retries) {
+        await new Promise((r) => setTimeout(r, baseDelayMs * (attempt + 1)));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      if (attempt >= retries) throw err;
+      await new Promise((r) => setTimeout(r, baseDelayMs * (attempt + 1)));
+    }
+  }
+}
+
 async function kraken<T>(path: string, ttlMs: number): Promise<T> {
   const hit = cache.get(path);
   if (hit && Date.now() - hit.at < ttlMs) return hit.data as T;
   try {
-    const res = await fetch(`${KRAKEN}/${path}`, {
-      headers: { "User-Agent": "Nautilus-Trading-Terminal/1.0" },
-    });
+    const res = await fetchWithRetry(`${KRAKEN}/${path}`);
     if (!res.ok) throw new Error(`Kraken HTTP ${res.status}`);
     const json = (await res.json()) as { error: string[]; result: T };
     if (json.error?.length) throw new Error(json.error.join(", "));
@@ -68,7 +90,9 @@ export function parseTickers(raw: Record<string, RawTicker>): Ticker[] {
       quoteVolume: volume * vwap,
     });
   }
-  const rank = Object.fromEntries(PAIR_BY_ID ? Object.keys(PAIR_BY_ID).map((id, i) => [id, i]) : []);
+  const rank = Object.fromEntries(
+    PAIR_BY_ID ? Object.keys(PAIR_BY_ID).map((id, i) => [id, i]) : [],
+  );
   out.sort((a, b) => (rank[a.id] ?? 99) - (rank[b.id] ?? 99));
   return out;
 }

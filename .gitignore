@@ -3,3 +3,7 @@ node_modules/
 .github_repo
 .env
 .env.*
+
+# Artefacts locaux (build Vercel, espace de travail de l’agent)
+.vercel/
+.grok/

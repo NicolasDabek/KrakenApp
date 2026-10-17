@@ -107,8 +107,18 @@ function FiscalPage() {
 
   useEffect(() => {
     if (!ready) return;
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(identity));
+    // Identité fiscale stockée en clair dans ce navigateur : rien n'est gardé si tout est vide.
+    const empty = Object.values(identity).every((v) => !String(v ?? "").trim());
+    if (empty) localStorage.removeItem(PROFILE_KEY);
+    else localStorage.setItem(PROFILE_KEY, JSON.stringify(identity));
   }, [identity, ready]);
+
+  const hasIdentity = Object.values(identity).some((v) => String(v ?? "").trim());
+  const clearIdentity = () => {
+    setIdentity(EMPTY_ID);
+    localStorage.removeItem(PROFILE_KEY);
+    toast.success("Identité fiscale effacée de ce navigateur.");
+  };
 
   useEffect(() => {
     if (!ready) return;
@@ -315,7 +325,16 @@ function FiscalPage() {
       </p>
 
       <section className="mt-4 rounded-lg border border-border bg-card p-4">
-        <p className="text-sm font-medium">Contribuable</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-medium">Contribuable</p>
+          <Button type="button" variant="outline" size="sm" onClick={clearIdentity} disabled={!hasIdentity}>
+            Effacer
+          </Button>
+        </div>
+        <p role="note" className="mt-2 rounded-md border border-border bg-background/40 px-3 py-2 text-xs leading-relaxed text-warning">
+          Ces informations (nom, n° fiscal, référence de compte) sont enregistrées en clair dans ce navigateur, sans
+          chiffrement. Évite de les saisir sur un appareil partagé, et clique sur « Effacer » une fois tes exports faits.
+        </p>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Field label="Prénom">
             <Input value={identity.firstName} onChange={(e) => setIdentity({ ...identity, firstName: e.target.value })} />

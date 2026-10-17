@@ -16,17 +16,133 @@ import {
   placeKrakenOrder,
 } from "./kraken-account.server.ts";
 import { callKrakenPrivate, parseKrakenBalances } from "./kraken-private.server.ts";
-import { getDepth, getOhlc, getOhlcHistory, getTickers, getTrades, pingKraken } from "./kraken.server.ts";
-import type { Bot, BotKind, BotParams, BotRuntime, Candle, NewOrderInput, Position, Ticker } from "./types.ts";
+import {
+  getDepth,
+  getOhlc,
+  getOhlcHistory,
+  getTickers,
+  getTrades,
+  pingKraken,
+} from "./kraken.server.ts";
+import type {
+  Bot,
+  BotKind,
+  BotParams,
+  BotRuntime,
+  Candle,
+  NewOrderInput,
+  Position,
+  Ticker,
+} from "./types.ts";
 
-export const V1_CORS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
+/**
+ * CORS de l'API v1. Elle reçoit les clés Kraken (X-API-Key / X-API-Secret) et
+ * passe des ordres : on n'autorise donc jamais `*`. Seules l'origine de l'appli
+ * elle-même et celles listées dans V1_ALLOWED_ORIGINS (séparées par des
+ * virgules, ex. `https://krakenapp.vercel.app,https://mon-front.fr`) reçoivent
+ * un `Access-Control-Allow-Origin`.
+ *
+ * Sécurité : ne JAMAIS journaliser les en-têtes X-API-Key / X-API-Secret ni
+ * l'objet `keys` (pas de console.* sur la requête, ses en-têtes ou `keys`).
+ */
+export const V1_ALLOWED_ORIGINS_ENV = "V1_ALLOWED_ORIGINS";
+
+export const V1_CORS_BASE: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, X-API-Key, X-API-Secret",
+  Vary: "Origin",
 };
 
-function json(data: unknown, status = 200) {
-  return Response.json(data, { status, headers: V1_CORS });
+function firstHeader(request: Request, name: string): string | undefined {
+  const v = request.headers.get(name)?.split(",")[0]?.trim();
+  return v || undefined;
+}
+
+function normalizeOrigin(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === "*") return undefined;
+  try {
+    const origin = new URL(trimmed).origin;
+    return origin === "null" ? undefined : origin;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Origine publique de l'appli (derrière Vercel : x-forwarded-proto / x-forwarded-host). */
+export function selfOrigin(request: Request): string {
+  const url = new URL(request.url);
+  const proto = firstHeader(request, "x-forwarded-proto") ?? url.protocol.replace(/:$/, "");
+  const host = firstHeader(request, "x-forwarded-host") ?? firstHeader(request, "host") ?? url.host;
+  return `${proto}://${host}`;
+}
+
+export function allowedOrigins(request: Request): Set<string> {
+  const out = new Set<string>();
+  const own = [new URL(request.url).origin, selfOrigin(request)];
+  for (const o of own) {
+    const n = normalizeOrigin(o);
+    if (n) out.add(n);
+  }
+  for (const o of (process.env[V1_ALLOWED_ORIGINS_ENV] ?? "").split(",")) {
+    const n = normalizeOrigin(o);
+    if (n) out.add(n);
+  }
+  return out;
+}
+
+/** `true` si la requête n'a pas d'en-tête Origin (même origine, curl, bot) ou une origine autorisée. */
+export function isOriginAllowed(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  if (!origin) return true;
+  const n = normalizeOrigin(origin);
+  return Boolean(n && allowedOrigins(request).has(n));
+}
+
+export function v1CorsHeaders(request: Request): Record<string, string> {
+  const headers = { ...V1_CORS_BASE };
+  const origin = request.headers.get("origin");
+  if (origin && isOriginAllowed(request)) {
+    headers["Access-Control-Allow-Origin"] = normalizeOrigin(origin)!;
+  }
+  return headers;
+}
+
+/** Réponse au preflight OPTIONS : 204 pour une origine autorisée, 403 sinon. */
+export function handleV1Preflight(request: Request): Response {
+  return new Response(null, {
+    status: isOriginAllowed(request) ? 204 : 403,
+    headers: v1CorsHeaders(request),
+  });
+}
+
+function isLoopbackHost(host: string): boolean {
+  const h = host.replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
+  return h === "localhost" || h === "127.0.0.1" || h === "::1";
+}
+
+function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+}
+
+/** En production, les routes privées exigent HTTPS (x-forwarded-proto derrière Vercel). Loopback toléré. */
+export function isInsecurePrivateRequest(request: Request): boolean {
+  if (!isProductionRuntime()) return false;
+  const url = new URL(request.url);
+  const host = firstHeader(request, "x-forwarded-host") ?? firstHeader(request, "host") ?? url.host;
+  if (isLoopbackHost(host)) return false;
+  const proto = firstHeader(request, "x-forwarded-proto") ?? url.protocol.replace(/:$/, "");
+  return proto.toLowerCase() !== "https";
+}
+
+/** Retire toute occurrence des clés d'un message renvoyé au client. */
+export function redactKeys(message: string, keys: { apiKey: string; apiSecret: string }): string {
+  let out = message;
+  for (const secret of [keys.apiSecret, keys.apiKey]) {
+    const s = secret.trim();
+    if (s.length >= 8) out = out.split(s).join("***");
+  }
+  return out;
 }
 
 function keysFrom(request: Request) {
@@ -34,13 +150,6 @@ function keysFrom(request: Request) {
     apiKey: request.headers.get("x-api-key") ?? "",
     apiSecret: request.headers.get("x-api-secret") ?? "",
   };
-}
-
-function needKeys(keys: { apiKey: string; apiSecret: string }) {
-  if (keys.apiKey.length < 8 || keys.apiSecret.length < 16) {
-    return json({ ok: false, message: "En-têtes X-API-Key et X-API-Secret requis." }, 401);
-  }
-  return null;
 }
 
 async function readBody<T>(request: Request): Promise<T> {
@@ -51,11 +160,27 @@ export async function handleV1(method: string, request: Request, splat: string):
   const path = splat.replace(/\/$/, "");
   const url = new URL(request.url);
   const keys = keysFrom(request);
+  const cors = v1CorsHeaders(request);
+  const json = (data: unknown, status = 200) => {
+    // Filet de sécurité : aucun message renvoyé au client ne doit contenir les clés.
+    const msg = (data as { message?: unknown } | null)?.message;
+    const safe =
+      typeof msg === "string" ? { ...(data as object), message: redactKeys(msg, keys) } : data;
+    return Response.json(safe, { status, headers: cors });
+  };
+  const needKeys = (k: { apiKey: string; apiSecret: string }) =>
+    k.apiKey.length < 8 || k.apiSecret.length < 16
+      ? json({ ok: false, message: "En-têtes X-API-Key et X-API-Secret requis." }, 401)
+      : null;
 
   try {
     if (method === "GET" && (path === "health" || path === "")) {
       const ping = await pingKraken();
-      return json({ ok: ping.ok, message: ping.ok ? "Nautilus backend" : "Kraken injoignable", ms: ping.ms });
+      return json({
+        ok: ping.ok,
+        message: ping.ok ? "Nautilus backend" : "Kraken injoignable",
+        ms: ping.ms,
+      });
     }
     if (method === "GET" && path === "tickers") {
       return json({ ok: true, tickers: await getTickers() });
@@ -121,11 +246,21 @@ export async function handleV1(method: string, request: Request, splat: string):
       return json({ ok: true, message: result.note, fills: result.fills, runtime: result.runtime });
     }
 
+    if (!isOriginAllowed(request)) {
+      return json({ ok: false, message: "Origine non autorisée pour les routes privées." }, 403);
+    }
+    if (isInsecurePrivateRequest(request)) {
+      return json({ ok: false, message: "HTTPS requis pour les routes privées." }, 403);
+    }
     const denied = needKeys(keys);
     if (denied) return denied;
 
     if (method === "POST" && path === "keys/test") {
-      const res = await callKrakenPrivate<Record<string, string>>(keys.apiKey, keys.apiSecret, "Balance");
+      const res = await callKrakenPrivate<Record<string, string>>(
+        keys.apiKey,
+        keys.apiSecret,
+        "Balance",
+      );
       if (!res.ok) return json({ ok: false, message: res.message, balances: {}, eur: 0 }, 400);
       const balances = parseKrakenBalances(res.result);
       return json({ ok: true, message: "Clés Kraken valides", balances, eur: balances.EUR ?? 0 });
@@ -139,7 +274,11 @@ export async function handleV1(method: string, request: Request, splat: string):
       return json(snap, snap.ok ? 200 : 400);
     }
     if (method === "GET" && path === "balances") {
-      const res = await callKrakenPrivate<Record<string, string>>(keys.apiKey, keys.apiSecret, "Balance");
+      const res = await callKrakenPrivate<Record<string, string>>(
+        keys.apiKey,
+        keys.apiSecret,
+        "Balance",
+      );
       if (!res.ok) return json({ ok: false, message: res.message, balances: {}, eur: 0 }, 400);
       const balances = parseKrakenBalances(res.result);
       return json({ ok: true, message: "OK", balances, eur: balances.EUR ?? 0 });

@@ -1,6 +1,6 @@
 import { afterEach, describe, it, mock } from "node:test";
 import assert from "node:assert/strict";
-import { handleV1, V1_CORS } from "./v1-handler.ts";
+import { handleV1, handleV1Preflight, redactKeys, V1_ALLOWED_ORIGINS_ENV } from "./v1-handler.ts";
 
 const SECRET = Buffer.from("nautilus-test-secret-material-32").toString("base64");
 const KEY = "kraken-key-ok";
@@ -9,8 +9,12 @@ afterEach(() => {
   mock.restoreAll();
 });
 
-function req(method: string, path: string, opts: { keys?: boolean; body?: unknown; query?: string } = {}) {
-  const headers: Record<string, string> = {};
+function req(
+  method: string,
+  path: string,
+  opts: { keys?: boolean; body?: unknown; query?: string; headers?: Record<string, string> } = {},
+) {
+  const headers: Record<string, string> = { ...opts.headers };
   if (opts.keys) {
     headers["x-api-key"] = KEY;
     headers["x-api-secret"] = SECRET;
@@ -85,7 +89,11 @@ describe("handleV1 public routes", () => {
     assert.equal((ok.body.fills as { side: string }[])[0]?.side, "buy");
 
     const bad = await jsonOf(
-      await handleV1("POST", req("POST", "bots/evaluate", { body: { kind: "dca" } }), "bots/evaluate"),
+      await handleV1(
+        "POST",
+        req("POST", "bots/evaluate", { body: { kind: "dca" } }),
+        "bots/evaluate",
+      ),
     );
     assert.equal(bad.status, 400);
     assert.equal(bad.body.ok, false);
@@ -187,7 +195,9 @@ describe("handleV1 auth and private routes", () => {
       throw new Error(u);
     });
 
-    const testKeys = await jsonOf(await handleV1("POST", req("POST", "keys/test", { keys: true, body: {} }), "keys/test"));
+    const testKeys = await jsonOf(
+      await handleV1("POST", req("POST", "keys/test", { keys: true, body: {} }), "keys/test"),
+    );
     assert.equal(testKeys.status, 200);
     assert.equal(testKeys.body.eur, 250);
 
@@ -219,7 +229,9 @@ describe("handleV1 auth and private routes", () => {
     );
     assert.equal(zero.status, 400);
 
-    const cancel = await jsonOf(await handleV1("DELETE", req("DELETE", "orders/O1", { keys: true }), "orders/O1"));
+    const cancel = await jsonOf(
+      await handleV1("DELETE", req("DELETE", "orders/O1", { keys: true }), "orders/O1"),
+    );
     assert.equal(cancel.status, 200);
     assert.equal(cancel.body.ok, true);
   });
@@ -228,9 +240,14 @@ describe("handleV1 auth and private routes", () => {
     mock.method(globalThis, "fetch", async () => {
       throw new Error("boom");
     });
-    const res = await handleV1("GET", req("GET", "tickers"), "tickers");
+    const res = await handleV1(
+      "GET",
+      req("GET", "tickers", { headers: { origin: "https://nautilus.test" } }),
+      "tickers",
+    );
     assert.equal(res.status, 500);
-    assert.equal(res.headers.get("Access-Control-Allow-Origin"), V1_CORS["Access-Control-Allow-Origin"]);
+    assert.equal(res.headers.get("Access-Control-Allow-Origin"), "https://nautilus.test");
+    assert.equal(res.headers.get("Vary"), "Origin");
     const body = (await res.json()) as { ok: boolean; message: string };
     assert.equal(body.ok, false);
     assert.match(body.message, /boom/);
@@ -357,25 +374,39 @@ describe("handleV1 market data and private reads", () => {
       if (u.includes("TradesHistory")) {
         return ok({
           trades: {
-            T1: { ordertxid: "O1", pair: "XXBTZEUR", time: 1_700_000_000, type: "buy", price: "90000", fee: "1", vol: "0.01" },
+            T1: {
+              ordertxid: "O1",
+              pair: "XXBTZEUR",
+              time: 1_700_000_000,
+              type: "buy",
+              price: "90000",
+              fee: "1",
+              vol: "0.01",
+            },
           },
         });
       }
       if (u.includes("OpenPositions")) return ok({});
       if (u.includes("Earn/Allocations")) return ok({ items: [] });
-      if (u.includes("Earn/Strategies")) return ok({ items: [{ id: "flex", asset: "EUR", apr_estimate: "0.04" }] });
+      if (u.includes("Earn/Strategies"))
+        return ok({ items: [{ id: "flex", asset: "EUR", apr_estimate: "0.04" }] });
       if (u.includes("DepositMethods")) return ok([{ method: "Bitcoin" }]);
-      if (u.includes("DepositAddresses")) return ok([{ address: "bc1qtest", expiretm: "0", new: false }]);
+      if (u.includes("DepositAddresses"))
+        return ok([{ address: "bc1qtest", expiretm: "0", new: false }]);
       if (u.includes("TradeBalance")) return ok({ eb: "100", tf: "80", m: "10", n: "2" });
       if (u.includes("AddOrder")) return ok({ txid: ["OCLOSE"] });
       throw new Error(u);
     });
 
-    const bal = await jsonOf(await handleV1("GET", req("GET", "balances", { keys: true }), "balances"));
+    const bal = await jsonOf(
+      await handleV1("GET", req("GET", "balances", { keys: true }), "balances"),
+    );
     assert.equal(bal.status, 200);
     assert.equal(bal.body.eur, 40);
 
-    const orders = await jsonOf(await handleV1("GET", req("GET", "orders", { keys: true }), "orders"));
+    const orders = await jsonOf(
+      await handleV1("GET", req("GET", "orders", { keys: true }), "orders"),
+    );
     assert.equal(orders.status, 200);
     assert.ok(Array.isArray(orders.body.orders));
 
@@ -383,7 +414,9 @@ describe("handleV1 market data and private reads", () => {
     assert.equal(fills.status, 200);
     assert.ok(((fills.body.fills as unknown[]) ?? []).length >= 1);
 
-    const pos = await jsonOf(await handleV1("GET", req("GET", "positions", { keys: true }), "positions"));
+    const pos = await jsonOf(
+      await handleV1("GET", req("GET", "positions", { keys: true }), "positions"),
+    );
     assert.equal(pos.status, 200);
 
     const earn = await jsonOf(await handleV1("GET", req("GET", "earn", { keys: true }), "earn"));
@@ -394,7 +427,9 @@ describe("handleV1 market data and private reads", () => {
     );
     assert.equal(strats.status, 200);
 
-    const dep = await jsonOf(await handleV1("GET", req("GET", "deposit/XBT", { keys: true }), "deposit/XBT"));
+    const dep = await jsonOf(
+      await handleV1("GET", req("GET", "deposit/XBT", { keys: true }), "deposit/XBT"),
+    );
     assert.equal(dep.status, 200);
 
     const light = await jsonOf(
@@ -430,7 +465,11 @@ describe("handleV1 market data and private reads", () => {
 
   it("rejects evaluate without a ticker and keys/test when Balance fails", async () => {
     const missing = await jsonOf(
-      await handleV1("POST", req("POST", "bots/evaluate", { body: { kind: "rsi", pair: "XBTEUR" } }), "bots/evaluate"),
+      await handleV1(
+        "POST",
+        req("POST", "bots/evaluate", { body: { kind: "rsi", pair: "XBTEUR" } }),
+        "bots/evaluate",
+      ),
     );
     assert.equal(missing.status, 400);
 
@@ -441,8 +480,144 @@ describe("handleV1 market data and private reads", () => {
         json: async () => ({ error: ["EAPI:Invalid key"], result: {} }),
       } as Response;
     });
-    const bad = await jsonOf(await handleV1("POST", req("POST", "keys/test", { keys: true, body: {} }), "keys/test"));
+    const bad = await jsonOf(
+      await handleV1("POST", req("POST", "keys/test", { keys: true, body: {} }), "keys/test"),
+    );
     assert.equal(bad.status, 400);
     assert.equal(bad.body.ok, false);
+  });
+});
+
+describe("handleV1 CORS allowlist and transport security", () => {
+  const savedEnv = { ...process.env };
+  afterEach(() => {
+    for (const k of [V1_ALLOWED_ORIGINS_ENV, "NODE_ENV", "VERCEL"]) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+  });
+
+  it("never answers with a wildcard origin", async () => {
+    okPublic({ unixtime: 1 });
+    const res = await handleV1(
+      "GET",
+      req("GET", "health", { headers: { origin: "https://evil.example" } }),
+      "health",
+    );
+    assert.equal(res.headers.get("Access-Control-Allow-Origin"), null);
+    assert.equal(res.headers.get("Vary"), "Origin");
+  });
+
+  it("allows the app's own origin, including behind a proxy", async () => {
+    okPublic({ unixtime: 1 });
+    const res = await handleV1(
+      "GET",
+      new Request("http://10.0.0.1/api/v1/health", {
+        headers: {
+          origin: "https://krakenapp.vercel.app",
+          "x-forwarded-proto": "https",
+          "x-forwarded-host": "krakenapp.vercel.app",
+        },
+      }),
+      "health",
+    );
+    assert.equal(res.headers.get("Access-Control-Allow-Origin"), "https://krakenapp.vercel.app");
+  });
+
+  it("allows origins listed in V1_ALLOWED_ORIGINS and ignores '*'", () => {
+    process.env[V1_ALLOWED_ORIGINS_ENV] = " https://front.example/ , * ,not a url";
+    const ok = handleV1Preflight(
+      req("OPTIONS", "orders", { headers: { origin: "https://front.example" } }),
+    );
+    assert.equal(ok.status, 204);
+    assert.equal(ok.headers.get("Access-Control-Allow-Origin"), "https://front.example");
+    assert.match(String(ok.headers.get("Access-Control-Allow-Headers")), /X-API-Secret/);
+    const ko = handleV1Preflight(
+      req("OPTIONS", "orders", { headers: { origin: "https://evil.example" } }),
+    );
+    assert.equal(ko.status, 403);
+    assert.equal(ko.headers.get("Access-Control-Allow-Origin"), null);
+  });
+
+  it("rejects private routes from a foreign origin before touching Kraken", async () => {
+    let called = false;
+    mock.method(globalThis, "fetch", async () => {
+      called = true;
+      throw new Error("should not be called");
+    });
+    const res = await handleV1(
+      "GET",
+      req("GET", "balances", { keys: true, headers: { origin: "https://evil.example" } }),
+      "balances",
+    );
+    assert.equal(res.status, 403);
+    assert.equal(called, false);
+  });
+
+  it("rejects private routes over plain HTTP in production, honouring x-forwarded-proto", async () => {
+    process.env.NODE_ENV = "production";
+    mock.method(
+      globalThis,
+      "fetch",
+      async () =>
+        ({
+          ok: true,
+          status: 200,
+          json: async () => ({ error: [], result: { ZEUR: "10" } }),
+        }) as Response,
+    );
+    const plain = await handleV1(
+      "GET",
+      new Request("http://krakenapp.example/api/v1/balances", {
+        headers: { "x-api-key": KEY, "x-api-secret": SECRET },
+      }),
+      "balances",
+    );
+    assert.equal(plain.status, 403);
+    assert.match(String(((await plain.json()) as { message: string }).message), /HTTPS/);
+
+    const proxied = await handleV1(
+      "GET",
+      new Request("http://10.0.0.1/api/v1/balances", {
+        headers: {
+          "x-api-key": KEY,
+          "x-api-secret": SECRET,
+          "x-forwarded-proto": "https",
+          "x-forwarded-host": "krakenapp.example",
+        },
+      }),
+      "balances",
+    );
+    assert.equal(proxied.status, 200);
+
+    const local = await handleV1(
+      "GET",
+      new Request("http://localhost:8081/api/v1/balances", {
+        headers: { "x-api-key": KEY, "x-api-secret": SECRET },
+      }),
+      "balances",
+    );
+    assert.equal(local.status, 200);
+
+    okPublic({ unixtime: 1 });
+    const publicRoute = await handleV1(
+      "GET",
+      new Request("http://krakenapp.example/api/v1/health"),
+      "health",
+    );
+    assert.equal(publicRoute.status, 200);
+  });
+
+  it("never echoes API keys in error messages", async () => {
+    mock.method(globalThis, "fetch", async () => {
+      throw new Error(`boom ${KEY} ${SECRET}`);
+    });
+    const res = await handleV1("GET", req("GET", "balances", { keys: true }), "balances");
+    const text = await res.text();
+    assert.equal(res.status, 400);
+    assert.match(text, /boom \*\*\* \*\*\*/);
+    assert.ok(!text.includes(KEY));
+    assert.ok(!text.includes(SECRET));
+    assert.equal(redactKeys(`a ${KEY} b`, { apiKey: KEY, apiSecret: SECRET }), "a *** b");
   });
 });

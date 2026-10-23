@@ -1,0 +1,33 @@
+import { Activity, ArrowUpRight, BadgeCheck, BarChart3, CandlestickChart, CircleDot, Combine, Cloud, Compass, Crosshair, Droplets, Flame, Gauge, Grip, Layers, LineChart, Milestone, Navigation, Percent, Radio, Repeat, Rocket, Split, Target, TrendingUp, Volume2, Waves, Zap } from "lucide-react";
+import type { BotKind } from "@/lib/trading/types";
+
+export const KIND_ICON: Record<BotKind, typeof Grip> = {
+  grid: Grip,
+  dca: Repeat,
+  rsi: Activity,
+  ema: TrendingUp,
+  bollinger: Waves,
+  macd: BarChart3,
+  stoch: Gauge,
+  vwap: Milestone,
+  breakout: Rocket,
+  supertrend: Compass,
+  volume: Volume2,
+  scalp: Zap,
+  cci: Crosshair,
+  meanrev: Target,
+  keltner: Layers,
+  roc: ArrowUpRight,
+  adx: Navigation,
+  williams: Percent,
+  ichimoku: Cloud,
+  psar: CircleDot,
+  sma: LineChart,
+  ha: CandlestickChart,
+  mfi: Droplets,
+  engulf: Flame,
+  obv: Radio,
+  div: Split,
+  confirm: BadgeCheck,
+  mtf: Combine,
+};

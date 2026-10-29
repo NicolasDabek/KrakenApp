@@ -2,6 +2,7 @@ import { DCA_INTERVALS, GRID_PRESETS, applyGridPreset, gridFeePadPct, kindNeedsC
 import { formatFiat } from "@/lib/trading/format";
 import type { BotKind, BotParams } from "@/lib/trading/types";
 import { cn } from "@/lib/utils";
+import { Segmented } from "@/components/ui/segmented";
 import { Field, NumField } from "./shared";
 
 export function KindParamsFields({
@@ -276,9 +277,33 @@ export function KindParamsFields({
           )}
         </div>
       )}
+      {kind !== "grid" && kind !== "dca" && (
+        <Field label="Qualité de tendance (EMA 20/50 + volume)">
+          <Segmented
+            value={params.trendFilter ?? "off"}
+            onChange={(v) => patch({ trendFilter: v })}
+            options={TREND_FILTER_OPTIONS}
+          />
+          <p className="mt-1 text-[11px] leading-relaxed text-subtle">
+            {TREND_FILTER_HELP[params.trendFilter ?? "off"]} Les ventes ne sont jamais bloquées.
+          </p>
+        </Field>
+      )}
     </>
   );
 }
+
+const TREND_FILTER_OPTIONS: { id: NonNullable<BotParams["trendFilter"]>; label: string }[] = [
+  { id: "off", label: "Off" },
+  { id: "soft", label: "Contre-tendance" },
+  { id: "strict", label: "Solide seulement" },
+];
+
+const TREND_FILTER_HELP: Record<NonNullable<BotParams["trendFilter"]>, string> = {
+  off: "Aucun filtre : comportement historique.",
+  soft: "Pas d’achat en tendance baissière (réversion : seulement si la baisse est solide, volume confirmé).",
+  strict: "Achat de suivi seulement en hausse solide (EMA20 > EMA50, pente et volume au-dessus de sa moyenne) ; réversion bloquée dès que la tendance baisse.",
+};
 
 function GridParamsFields({
   params,

@@ -26,7 +26,7 @@ export {
   formatWait,
 } from "./bots/common.ts";
 export type { BotFill, BotEvalCtx } from "./bots/common.ts";
-export { evaluateDesk, evaluateBot } from "./bots/evaluate.ts";
+export { evaluateDesk, evaluateBot, trendFilterNote } from "./bots/evaluate.ts";
 export type { DeskLimits, DeskSnapshot } from "./bots/evaluate.ts";
 export { botWinRate, allocateByPerformance, botAllocScore, monteCarloPnl } from "./bots/stats.ts";
 export type { MonteCarloResult, AllocInput, AllocResult } from "./bots/stats.ts";

@@ -219,11 +219,11 @@ const RANGE_BREAK = new Set<BotKind>(["breakout", "volume", "engulf"]);
 /** Defaults that cut the two usual ways these bots lose money: knife-catches and fee churn. */
 export function profitDefaults(kind: BotKind): Partial<BotParams> {
   if (kind === "grid" || kind === "dca") return {};
-  if (RANGE_BREAK.has(kind)) return { slPct: 2.5, slAtr: 0, beAfterPct: 1.2, adxCeil: 0, adxFloor: 0 };
+  if (RANGE_BREAK.has(kind)) return { slPct: 2.5, slAtr: 0, beAfterPct: 1.2, adxCeil: 0, adxFloor: 0, trendFilter: "soft" };
   if (MEAN_REVERSION.has(kind)) {
-    return { adxCeil: 32, adxFloor: 0, slPct: 3.5, slAtr: 0, beAfterPct: 1.2, crashPct: 2.5 };
+    return { adxCeil: 32, adxFloor: 0, slPct: 3.5, slAtr: 0, beAfterPct: 1.2, crashPct: 2.5, trendFilter: "soft" };
   }
-  return { adxFloor: 18, adxCeil: 0, slPct: 0, slAtr: 2, beAfterPct: 1.2 };
+  return { adxFloor: 18, adxCeil: 0, slPct: 0, slAtr: 2, beAfterPct: 1.2, trendFilter: "soft" };
 }
 
 /** Risk chips must not arm the overlay stop on a grid — that flattens every lot. */

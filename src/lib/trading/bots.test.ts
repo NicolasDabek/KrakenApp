@@ -41,6 +41,7 @@ import {
   resetPaperAccount,
   snapshotEquity,
   walkForward,
+  trendFilterNote,
 } from "./bots.ts";
 import type { Bot, BotKind, Candle, PaperAccount, Ticker } from "./types.ts";
 
@@ -1407,7 +1408,8 @@ describe("evaluateBot — MACD, oscillators, trend flips, MFI", () => {
     );
     assert.equal(again.fills.length, 0);
 
-    const scalp = walkUntilFill("scalp", cs, { fast: 5, slow: 13, rsiPeriod: 7 });
+    // Raw strategy signal: the default trend filter would wait for EMA20 > EMA50 here.
+    const scalp = walkUntilFill("scalp", cs, { fast: 5, slow: 13, rsiPeriod: 7, trendFilter: "off" });
     assert.equal(scalp.res.fills[0]?.side, "buy");
 
     const st = walkUntilFill("supertrend", cs, { atrPeriod: 7, atrMult: 2 });
@@ -1707,5 +1709,63 @@ describe("desk risk / monte carlo / confirmation", () => {
       { now: 2, ticker: ticker(96), barLow: 95, barHigh: 100.2, quoteBudget: 10_000, feeRate: 0.0026 },
     );
     assert.equal(poor.fills.filter((f) => f.side === "buy").length, 0);
+  });
+});
+
+describe("trend quality filter (EMA 20/50 + volume)", () => {
+  const ramp = (n: number, from: number, step: number) => Array.from({ length: n }, (_, i) => from + i * step);
+  const lastCtx = (cs: Candle[]) => ({ now: 1_000, ticker: ticker(cs.at(-1)!.close), candles: cs });
+
+  it("is off unless set, and new bots default to soft (grid/dca excluded)", () => {
+    assert.equal(profitDefaults("rsi").trendFilter, "soft");
+    assert.equal(profitDefaults("ema").trendFilter, "soft");
+    assert.equal(profitDefaults("breakout").trendFilter, "soft");
+    assert.equal(profitDefaults("grid").trendFilter, undefined);
+    assert.equal(trendFilterNote(makeBot("ema", { params: { trendFilter: undefined } }), lastCtx(candlesFrom(ramp(80, 200, -1)))), null);
+    assert.equal(trendFilterNote(makeBot("grid", { params: { trendFilter: "strict" } }), lastCtx(candlesFrom(ramp(80, 200, -1)))), null);
+  });
+
+  it("soft blocks trend-following buys in a downtrend, not in an uptrend", () => {
+    const down = candlesFrom(ramp(80, 200, -1));
+    const up = candlesFrom(ramp(80, 100, 1));
+    const bot = makeBot("ema", { params: { trendFilter: "soft" } });
+    assert.match(trendFilterNote(bot, lastCtx(down)) ?? "", /Baissière/);
+    assert.equal(trendFilterNote(bot, lastCtx(up)), null);
+  });
+
+  it("soft lets mean-reversion buy a fragile dip but strict does not", () => {
+    // Downtrend on fading volume = fragile.
+    const cs = candlesFrom(ramp(80, 200, -1)).map((c, i) => ({ ...c, volume: 100 - i }));
+    assert.equal(trendFilterNote(makeBot("rsi", { params: { trendFilter: "soft" } }), lastCtx(cs)), null);
+    assert.ok(trendFilterNote(makeBot("rsi", { params: { trendFilter: "strict" } }), lastCtx(cs)));
+  });
+
+  it("strict needs a solid uptrend for trend bots", () => {
+    const solid = candlesFrom(ramp(80, 100, 1));
+    const fragile = solid.map((c, i) => ({ ...c, volume: i > 70 ? 2 : 20 }));
+    const bot = makeBot("breakout", { params: { trendFilter: "strict" } });
+    assert.equal(trendFilterNote(bot, lastCtx(solid)), null);
+    assert.match(trendFilterNote(bot, lastCtx(fragile)) ?? "", /fragile/);
+  });
+
+  it("never blocks sells and does not act without enough candles", () => {
+    const bot = makeBot("ema", { params: { trendFilter: "strict" } });
+    assert.equal(trendFilterNote(bot, lastCtx(candlesFrom(ramp(30, 200, -1)))), null);
+    const down = candlesFrom(ramp(80, 200, -1));
+    const held = makeBot("ema", {
+      params: { trendFilter: "strict", fast: 5, slow: 13, slPct: 0, slAtr: 0, tpPct: 0, trailingPct: 0, beAfterPct: 0, adxFloor: 0 },
+      runtime: { inPosition: true, positionQty: 1, positionAvg: 150 },
+    });
+    const res = evaluateBot(held, lastCtx(down));
+    assert.ok(res.fills.every((f) => f.side === "sell"));
+  });
+
+  it("adds trend filter variants to the optimizer and longer warmup only when on", () => {
+    const labels = paramVariants("rsi", defaultParams("rsi", 100)).map((r) => r.label);
+    assert.ok(labels.includes("tendance off") && labels.includes("tendance strict"));
+    assert.ok(paramVariants("rsi", defaultParams("rsi", 100)).length <= 18);
+    assert.equal(backtestWarmup("rsi", { trendFilter: "off" }), 48);
+    assert.equal(backtestWarmup("rsi", { trendFilter: "soft" }), 60);
+    assert.equal(paramVariants("dca", defaultParams("dca", 100)).length, 1);
   });
 });

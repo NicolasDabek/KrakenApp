@@ -339,6 +339,8 @@ export type BotParams = {
   psarAf?: number;
   psarMax?: number;
   trendEma?: number;
+  /** Filtre qualité de tendance EMA 20/50 + volume sur les achats. Absent = off. */
+  trendFilter?: "off" | "soft" | "strict";
   slAtr?: number;
   maxHoldMin?: number;
   sessionStart?: number;

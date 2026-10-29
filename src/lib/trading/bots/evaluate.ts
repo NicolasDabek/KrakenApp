@@ -1,4 +1,4 @@
-import { adx, atr, ema } from "../indicators.ts";
+import { adx, atr, ema, trendQuality } from "../indicators.ts";
 import type { Bot, BotRuntime } from "../types.ts";
 import { MEAN_REVERSION } from "./catalog.ts";
 import { dropFormingCandle, markFlat, px, remainingQuoteBudget, roundSmart, tradingDay } from "./common.ts";
@@ -172,6 +172,26 @@ function regimeNote(bot: Bot, ctx: BotEvalCtx): string | null {
   return null;
 }
 
+/**
+ * Filtre qualité de tendance (EMA 20/50 + volume). N'agit que sur les achats.
+ * soft : suivi de tendance bloqué en tendance baissière ; réversion bloquée en baisse solide.
+ * strict : suivi de tendance seulement en hausse solide ; réversion bloquée dès que la tendance baisse.
+ */
+export function trendFilterNote(bot: Bot, ctx: BotEvalCtx): string | null {
+  const mode = bot.params.trendFilter ?? "off";
+  if (mode === "off" || bot.kind === "grid" || bot.kind === "dca") return null;
+  const candles = ctx.candles;
+  if (!candles) return null;
+  const tq = trendQuality(candles);
+  if (tq.emaSlow == null) return null;
+  const reversion = MEAN_REVERSION.has(bot.kind);
+  const down = tq.direction === "down";
+  let block: boolean;
+  if (reversion) block = mode === "strict" ? down : down && tq.quality === "solid";
+  else block = mode === "strict" ? !(tq.direction === "up" && tq.quality === "solid") : down;
+  return block ? `Tendance ${tq.note} — pas d’achat` : null;
+}
+
 function crashNote(bot: Bot, ctx: BotEvalCtx): string | null {
   if (!MEAN_REVERSION.has(bot.kind)) return null;
   const crash = bot.params.crashPct ?? 0;
@@ -198,7 +218,7 @@ function buyBlockReason(bot: Bot, ctx: BotEvalCtx, runtime: BotRuntime): string 
     const e = series[series.length - 1];
     if (e != null && last < e) return `Filtre EMA${Math.round(trendN)} baissier`;
   }
-  const regime = regimeNote(bot, ctx) ?? crashNote(bot, ctx);
+  const regime = regimeNote(bot, ctx) ?? crashNote(bot, ctx) ?? trendFilterNote(bot, ctx);
   if (regime) return regime;
   const spreadPct =
     ctx.ticker.ask > 0 && ctx.ticker.bid > 0 && last > 0
@@ -282,7 +302,7 @@ function applyRisk(
     }
   }
 
-  const regime = regimeNote(bot, ctx) ?? crashNote(bot, ctx);
+  const regime = regimeNote(bot, ctx) ?? crashNote(bot, ctx) ?? trendFilterNote(bot, ctx);
   if (regime) {
     fills = fills.filter((f) => f.side === "sell");
     if (fills.length === 0) note = regime;

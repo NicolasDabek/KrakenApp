@@ -216,6 +216,12 @@ export function backtestBot(
 }
 
 export function backtestWarmup(kind: BotKind, params: BotParams): number {
+  const base = kindWarmup(kind, params);
+  // trendQuality needs EMA50 + 5 bars of slope; only extend the warmup when the filter is on.
+  return params.trendFilter && params.trendFilter !== "off" && kind !== "grid" && kind !== "dca" ? Math.max(base, 60) : base;
+}
+
+function kindWarmup(kind: BotKind, params: BotParams): number {
   const n = (v: number | undefined, d: number) => Math.max(2, Math.round(v ?? d));
   switch (kind) {
     case "sma":
@@ -338,6 +344,13 @@ export function paramVariants(kind: BotKind, base: BotParams): { params: BotPara
     add("premier lot marché", { gridSeed: true });
     add("revente brute", { gridNetFees: false });
     add("pause 30 min après stop", { gridSlPct: 3, gridSlCooldownMin: 30 });
+  }
+  if (kind !== "grid" && kind !== "dca") {
+    const extra: { params: BotParams; label: string }[] = [];
+    for (const mode of ["off", "soft", "strict"] as const) {
+      if ((base.trendFilter ?? "off") !== mode) extra.push({ params: { ...base, trendFilter: mode }, label: `tendance ${mode}` });
+    }
+    return [...rows.slice(0, 18 - extra.length), ...extra];
   }
   return rows.slice(0, 18);
 }

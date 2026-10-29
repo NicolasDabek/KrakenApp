@@ -535,3 +535,127 @@ export function heikinAshi(candles: Candle[]): Candle[] {
 
 export type IndicatorId = "ema" | "bb" | "vwap" | "rsi" | "macd" | "atr" | "stoch" | "none";
 
+
+export type TrendDirection = "up" | "down" | "flat";
+export type TrendQualityLevel = "solid" | "fragile" | "none";
+
+export type TrendQuality = {
+  direction: TrendDirection;
+  quality: TrendQualityLevel;
+  /** −100…100 : signe = sens, valeur = conviction (écart EMA, pente, volume). */
+  score: number;
+  emaFast: number | null;
+  emaSlow: number | null;
+  /** Écart EMA rapide / lente en % de la lente. */
+  spreadPct: number;
+  /** Volume moyen des bougies dans le sens de la tendance / moyenne mobile du volume. null = pas de volume. */
+  volRatio: number | null;
+  /** Volume récent (5 bougies) / moyenne mobile du volume. */
+  volTrend: number | null;
+  /** Bougies depuis le dernier croisement EMA (Infinity si aucun dans la fenêtre). */
+  barsSinceCross: number;
+  note: string;
+};
+
+export type TrendQualityOpts = {
+  fast?: number;
+  slow?: number;
+  volPeriod?: number;
+  /** Bougies regardées pour la pente et le volume directionnel. */
+  lookback?: number;
+  /** Écart EMA (%) sous lequel les moyennes sont « emmêlées ». */
+  tanglePct?: number;
+};
+
+const NO_TREND: Omit<TrendQuality, "note"> = {
+  direction: "flat",
+  quality: "none",
+  score: 0,
+  emaFast: null,
+  emaSlow: null,
+  spreadPct: 0,
+  volRatio: null,
+  volTrend: null,
+  barsSinceCross: Infinity,
+};
+
+/**
+ * Qualité de tendance EMA 20/50 + volume.
+ * Sens : EMA rapide au-dessus (au-dessous) de la lente avec une pente dans le même sens.
+ * Solide : écart net, pas de croisement récent, et le volume des bougies qui vont dans le sens
+ * de la tendance dépasse sa moyenne mobile sans s'effondrer. Fragile : sens présent mais EMAs
+ * emmêlées / croisement récent, ou volume faible ou en baisse.
+ */
+export function trendQuality(candles: Candle[], opts: TrendQualityOpts = {}): TrendQuality {
+  const fastN = Math.max(2, Math.round(opts.fast ?? 20));
+  const slowN = Math.max(fastN + 1, Math.round(opts.slow ?? 50));
+  const volN = Math.max(2, Math.round(opts.volPeriod ?? 20));
+  const look = Math.max(2, Math.round(opts.lookback ?? 5));
+  const tangle = opts.tanglePct ?? 0.15;
+  if (candles.length < slowN + look) return { ...NO_TREND, note: "Pas assez de bougies" };
+  const closes = candles.map((c) => c.close);
+  const ef = ema(closes, fastN);
+  const es = ema(closes, slowN);
+  const i = candles.length - 1;
+  const f = ef[i]!;
+  const s = es[i]!;
+  const fPrev = ef[i - look];
+  if (f == null || s == null || fPrev == null || !(s > 0)) return { ...NO_TREND, note: "Pas assez de bougies" };
+  const spreadPct = ((f - s) / s) * 100;
+  const slopePct = ((f - fPrev) / fPrev) * 100;
+  let barsSinceCross = Infinity;
+  for (let j = i; j > i - Math.max(look * 2, 10) && j > 0; j--) {
+    const a = ef[j];
+    const b = es[j];
+    const a0 = ef[j - 1];
+    const b0 = es[j - 1];
+    if (a == null || b == null || a0 == null || b0 == null) break;
+    if (Math.sign(a - b) !== Math.sign(a0 - b0)) {
+      barsSinceCross = i - j;
+      break;
+    }
+  }
+  let direction: TrendDirection = "flat";
+  if (spreadPct > 0 && slopePct > 0) direction = "up";
+  else if (spreadPct < 0 && slopePct < 0) direction = "down";
+  const base = { emaFast: f, emaSlow: s, spreadPct, barsSinceCross };
+  if (direction === "flat") {
+    return { ...NO_TREND, ...base, note: `EMA${fastN}/${slowN} sans sens net` };
+  }
+  const vols = candles.map((c) => c.volume || 0);
+  const volMa = sma(vols, volN)[i];
+  let volRatio: number | null = null;
+  let volTrend: number | null = null;
+  if (volMa != null && volMa > 0) {
+    const sign = direction === "up" ? 1 : -1;
+    let sum = 0;
+    let n = 0;
+    let recent = 0;
+    for (let j = i - look * 2 + 1; j <= i; j++) {
+      const c = candles[j]!;
+      if (j > i - look) recent += vols[j]!;
+      if (Math.sign(c.close - c.open) === sign) {
+        sum += vols[j]!;
+        n++;
+      }
+    }
+    volRatio = n > 0 ? sum / n / volMa : 0;
+    volTrend = recent / look / volMa;
+  }
+  const tangled = Math.abs(spreadPct) < tangle || barsSinceCross < look;
+  const volWeak = volRatio != null && (volRatio < 1 || (volTrend != null && volTrend < 0.7));
+  const quality: TrendQualityLevel = tangled || volWeak ? "fragile" : "solid";
+  const spreadPart = Math.min(1, Math.abs(spreadPct) / (tangle * 6));
+  const slopePart = Math.min(1, Math.abs(slopePct) / (tangle * 3));
+  const volPart = volRatio == null ? 0.5 : Math.min(1, Math.max(0, (volRatio - 0.5) / 1));
+  let mag = spreadPart * 0.4 + slopePart * 0.2 + volPart * 0.4;
+  if (tangled) mag *= 0.5;
+  const score = Math.round((direction === "up" ? 1 : -1) * mag * 100);
+  const why: string[] = [];
+  if (tangled) why.push(barsSinceCross < look ? "croisement récent" : "EMAs emmêlées");
+  if (volRatio == null) why.push("volume indisponible");
+  else if (volWeak) why.push(volRatio < 1 ? `volume faible ×${volRatio.toFixed(2)}` : `volume en baisse ×${volTrend!.toFixed(2)}`);
+  else why.push(`volume ×${volRatio.toFixed(2)}`);
+  const label = `${direction === "up" ? "Haussière" : "Baissière"} ${quality === "solid" ? "solide" : "fragile"}`;
+  return { direction, quality, score, emaFast: f, emaSlow: s, spreadPct, volRatio, volTrend, barsSinceCross, note: `${label} · ${why.join(", ")}` };
+}

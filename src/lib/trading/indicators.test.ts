@@ -22,6 +22,7 @@ import {
   vwap,
   williamsR,
   zscore,
+  trendQuality,
 } from "./indicators.ts";
 import type { Candle } from "./types.ts";
 
@@ -199,5 +200,61 @@ describe("bands, oscillators, trend", () => {
     assert.equal(series[1], 5);
     assert.equal(series[2], 8);
     assert.equal(series[3], 4);
+  });
+});
+
+describe("trendQuality (EMA 20/50 + volume)", () => {
+  const ramp = (n: number, from: number, step: number) => Array.from({ length: n }, (_, i) => from + i * step);
+
+  it("returns none without enough candles", () => {
+    const tq = trendQuality(candlesFrom(ramp(40, 100, 1)));
+    assert.equal(tq.direction, "flat");
+    assert.equal(tq.quality, "none");
+    assert.equal(tq.emaSlow, null);
+  });
+
+  it("reads a steady volume-backed rally as a solid uptrend", () => {
+    const tq = trendQuality(candlesFrom(ramp(80, 100, 1)));
+    assert.equal(tq.direction, "up");
+    assert.equal(tq.quality, "solid");
+    assert.ok(tq.score > 50);
+    assert.ok(tq.emaFast! > tq.emaSlow!);
+    assert.ok(tq.spreadPct > 0);
+  });
+
+  it("reads a steady decline as down with a negative score", () => {
+    const tq = trendQuality(candlesFrom(ramp(80, 200, -1)));
+    assert.equal(tq.direction, "down");
+    assert.equal(tq.quality, "solid");
+    assert.ok(tq.score < -50);
+  });
+
+  it("flags the same rally as fragile when volume dries up", () => {
+    const cs = candlesFrom(ramp(80, 100, 1)).map((c, i) => ({ ...c, volume: i > 70 ? 2 : 20 }));
+    const tq = trendQuality(cs);
+    assert.equal(tq.direction, "up");
+    assert.equal(tq.quality, "fragile");
+    assert.ok(tq.volTrend! < 0.7);
+    assert.ok(Math.abs(tq.score) < Math.abs(trendQuality(candlesFrom(ramp(80, 100, 1))).score));
+  });
+
+  it("flags tangled EMAs right after a cross as fragile", () => {
+    const closes = [...ramp(60, 200, -1), ...ramp(14, 141, 3)];
+    const tq = trendQuality(candlesFrom(closes));
+    assert.ok(tq.barsSinceCross < 10 || Math.abs(tq.spreadPct) < 0.15 || tq.direction === "flat");
+    assert.notEqual(tq.quality, "solid");
+  });
+
+  it("is flat when the EMAs disagree with the slope", () => {
+    const closes = [...ramp(70, 100, 1), ...ramp(10, 168, -1)];
+    const tq = trendQuality(candlesFrom(closes));
+    assert.equal(tq.direction, "flat");
+    assert.equal(tq.quality, "none");
+  });
+
+  it("falls back to EMAs alone when there is no volume", () => {
+    const tq = trendQuality(candlesFrom(ramp(80, 100, 1), 0));
+    assert.equal(tq.volRatio, null);
+    assert.equal(tq.quality, "solid");
   });
 });

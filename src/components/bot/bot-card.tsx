@@ -8,10 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { botDeployed, botInventoryQty, botMark, BOT_KIND_BY_ID, botWinRate, gridFeePadPct, kindNeedsCandles, profitDefaults } from "@/lib/trading/bots";
 import { formatDateTime, formatFiat, formatQty } from "@/lib/trading/format";
-import { EUR_PAIRS, PAIR_BY_ID, intervalLabel } from "@/lib/trading/pairs";
+import { trendQuality } from "@/lib/trading/indicators";
+import { EUR_PAIRS, PAIR_BY_ID, intervalLabel, toEurPair } from "@/lib/trading/pairs";
 import { downloadCsv } from "@/lib/trading/stats";
 import { useTradingStore } from "@/lib/trading/store";
 import type { Bot, BotParams } from "@/lib/trading/types";
+import { TrendQualityLine } from "@/components/markets/trend-quality";
 import { ConfirmBar, Field, NumField, Spark, Stat } from "./shared";
 import { KIND_ICON } from "./kind-icons";
 import { KindParamsFields } from "./kind-params-fields";
@@ -90,6 +92,7 @@ export function BotCard({ bot }: { bot: Bot }) {
         </div>
       </button>
       <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{bot.lastNote}</p>
+      <BotTrend bot={bot} />
       {bot.kind === "grid" && (
         <GridStatus bot={bot} last={ticker?.last} feeRate={bot.venue === "live" ? liveFee : paperFee} />
       )}
@@ -474,6 +477,24 @@ function GridBook({ bot, last, feeRate }: { bot: Bot; last?: number; feeRate?: n
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+/** État de tendance EMA 20/50 + volume sur les bougies du bot (mêmes données que le moteur). */
+function BotTrend({ bot }: { bot: Bot }) {
+  const candles = useTradingStore(
+    (s) => s.botCandles[`${toEurPair(bot.pair)}:${bot.interval}`] ?? s.botCandles[`${bot.pair}:${bot.interval}`],
+  );
+  const tq = useMemo(() => (candles?.length ? trendQuality(candles) : null), [candles]);
+  if (bot.kind === "grid" || bot.kind === "dca" || !tq) return null;
+  const mode = bot.params.trendFilter ?? "off";
+  return (
+    <div className="mt-1 flex flex-wrap items-baseline gap-x-2">
+      <TrendQualityLine tq={tq} frame={intervalLabel(bot.interval)} />
+      <span className="text-[11px] text-subtle">
+        Filtre {mode === "off" ? "off" : mode === "soft" ? "contre-tendance" : "solide seulement"}
+      </span>
     </div>
   );
 }

@@ -6,6 +6,8 @@ import { PAIR_BY_ID } from "@/lib/trading/pairs";
 import { assetBoard, biasTone, marketSignal } from "@/lib/trading/signals";
 import { usdValue, isLiveConnected, liveBalanceRows, useTradingStore } from "@/lib/trading/store";
 import { cn } from "@/lib/utils";
+import { useTrendQuality } from "@/lib/trading/use-trend-quality";
+import { TrendQualityLine } from "@/components/markets/trend-quality";
 
 export function MarketOverview() {
   const tickers = useTradingStore((s) => s.tickers);
@@ -148,6 +150,7 @@ export function MarketOverview() {
                     {a.signal.reasons[0] && (
                       <p className="mt-1 text-xs text-subtle">{a.signal.reasons[0]}</p>
                     )}
+                    <AssetTrend pair={a.pairId} />
                   </div>
                   <div className="shrink-0 text-right">
                     <p className={cn("font-mono text-sm tabular-nums", a.changePct >= 0 ? "text-buy" : "text-sell")}>
@@ -199,4 +202,9 @@ export function MarketOverview() {
       )}
     </div>
   );
+}
+
+function AssetTrend({ pair }: { pair: string }) {
+  const tq = useTrendQuality(pair);
+  return <TrendQualityLine tq={tq} className="mt-1" />;
 }

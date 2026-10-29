@@ -1,12 +1,14 @@
 import { Link } from "@tanstack/react-router";
 import { Search, Star } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { formatCompact, formatPct, formatPrice } from "@/lib/trading/format";
 import { PAIR_BY_ID } from "@/lib/trading/pairs";
 import { biasTone, marketSignal } from "@/lib/trading/signals";
 import { useTradingStore } from "@/lib/trading/store";
+import { useTrendQuality } from "@/lib/trading/use-trend-quality";
+import { TrendQualityLine } from "@/components/markets/trend-quality";
 import type { Ticker } from "@/lib/trading/types";
 import { cn } from "@/lib/utils";
 
@@ -153,9 +155,11 @@ function MarketRow({
   const meta = PAIR_BY_ID[ticker.id];
   const up = ticker.changePct >= 0;
   const sig = marketSignal(ticker);
+  const [rowRef, seen] = useSeen<HTMLLIElement>(!compact);
+  const tq = useTrendQuality(ticker.id, !compact && seen);
   const quote = meta?.quote === "EUR" ? "EUR" : "USD";
   return (
-    <li className="border-b border-border">
+    <li ref={rowRef} className="border-b border-border">
       <div className="flex items-center gap-1">
         <button
           type="button"
@@ -188,6 +192,7 @@ function MarketRow({
                 {sig.spreadPct > 0 ? ` · spr. ${sig.spreadPct.toFixed(2)}%` : ""}
               </p>
             )}
+            {!compact && <TrendQualityLine tq={tq} className="mt-0.5" />}
           </div>
           <div className="text-right">
             <div className="font-mono text-sm tabular-nums">
@@ -220,4 +225,27 @@ function RangeBar({ low, high, last }: { low: number; high: number; last: number
       />
     </div>
   );
+}
+
+/** Vrai dès que la ligne est entrée à l'écran : la tendance 1 h n'est chargée que pour les lignes vues. */
+function useSeen<T extends Element>(enabled: boolean) {
+  const ref = useRef<T>(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!enabled || seen || !el) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setSeen(true);
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        setSeen(true);
+        io.disconnect();
+      }
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [enabled, seen]);
+  return [ref, seen] as const;
 }

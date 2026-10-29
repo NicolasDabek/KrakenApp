@@ -49,6 +49,8 @@ export type BacktestOpts = {
   warmup?: number;
   interval?: number;
   requestedDays?: number;
+  /** Max candles handed to the bot per bar (live bots see ~720). Default: all. */
+  lookback?: number;
 };
 
 export function backtestBot(
@@ -90,7 +92,7 @@ export function backtestBot(
 
   for (let i = warmup; i < candles.length; i++) {
     const c = candles[i]!;
-    const slice = candles.slice(0, i + 1);
+    const slice = candles.slice(opts.lookback ? Math.max(0, i + 1 - opts.lookback) : 0, i + 1);
     const ticker = {
       id: pair,
       last: c.close,

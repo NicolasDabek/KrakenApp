@@ -52,13 +52,17 @@ export function remainingQuoteBudget(params: BotParams, runtime: BotRuntime, ava
   return Math.max(0, Math.min(available, leftover));
 }
 
+// One shared formatter: building an Intl.DateTimeFormat per call is slow and
+// grows native (ICU) memory on every bot tick / backtest bar.
+const PARIS_DAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Paris",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 export function tradingDay(ms: number): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(ms);
+  return PARIS_DAY.format(ms);
 }
 
 export function roundSmart(n: number): number {

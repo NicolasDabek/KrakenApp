@@ -168,6 +168,10 @@ const grokOAuthPlugin = authConfigured
         // `prompt=select_account`, the user always gets the account chooser
         // and can pick (or switch) which account to sign in with.
         authorizationUrlParams: { idp, prompt: "login" },
+        // Better Auth 1.7 keys plain-OAuth accounts on `profile.id`; the broker's
+        // userinfo is OIDC-shaped (`sub`), which 1.6 used as the account id.
+        // Keep `sub` so existing `account.accountId` rows still match.
+        accountSubject: ({ profile }) => String(profile.sub ?? profile.id ?? ""),
       })),
     })
   : null;
@@ -221,6 +225,10 @@ export const auth = betterAuth({
   // Secure + the names ourselves. (Browsers allow Secure cookies on
   // `http://localhost`, so local dev still works.)
   advanced: {
+    // Better Auth 1.7 ignores X-Forwarded-Host/Proto unless opted in. The live
+    // preview sits behind the sandbox proxy, and the dynamic baseURL still
+    // validates the forwarded host against `allowedHosts`.
+    trustedProxyHeaders: true,
     useSecureCookies: false,
     defaultCookieAttributes: { secure: true, sameSite: "lax", path: "/" },
     cookies: {

@@ -7,3 +7,4 @@ node_modules/
 # Artefacts locaux (build Vercel, espace de travail de l’agent)
 .vercel/
 .grok/
+scripts/bt/.data/

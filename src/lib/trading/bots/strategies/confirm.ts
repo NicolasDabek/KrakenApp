@@ -50,12 +50,17 @@ export function evalConfirm(bot: Bot, ctx: BotEvalCtx): { fills: BotFill[]; runt
   }
   const trendUp = f > s;
   const macdUp = h > 0;
-  const rsiRecover = pr < os && r >= os;
+  // Pullback-in-uptrend: RSI dipped under `os` within the last 8 bars, and the
+  // MACD histogram just turned positive. (The old "RSI crosses up through os
+  // while EMA and MACD are already bullish" almost never lined up: 0 trades.)
+  let recentDip = false;
+  for (let k = Math.max(0, i - 8); k <= i; k++) if ((rSeries[k] ?? 100) < os) recentDip = true;
+  const macdTurnUp = ph <= 0 && h > 0;
   const rsiDrop = pr <= ob && r > ob;
   const macdDown = ph >= 0 && h < 0;
   const deathCross = pf != null && ps != null && pf >= ps && f < s;
   const fills: BotFill[] = [];
-  if (!runtime.inPosition && trendUp && macdUp && rsiRecover) {
+  if (!runtime.inPosition && trendUp && macdTurnUp && recentDip && r < ob) {
     const fillPx = px(ctx, "buy");
     const qty = orderQty(bot, ctx, fillPx);
     if (qty > 0) {

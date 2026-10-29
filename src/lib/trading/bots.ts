@@ -9,6 +9,8 @@ export {
   DCA_INTERVALS,
   BOT_CANDLE_INTERVALS,
   defaultParams,
+  untunedParams,
+  TUNED_DEFAULTS,
   profitDefaults,
   riskPresetFor,
   defaultSize,

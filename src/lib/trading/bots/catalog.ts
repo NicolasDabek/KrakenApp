@@ -10,7 +10,8 @@ export const BOT_KINDS: {
   {
     id: "grid",
     title: "Grille",
-    blurb: "Lots mémorisés : revente à +X % du prix d’achat, nouvel achat plus bas, rachat au prix d’origine après une vente.",
+    blurb:
+      "Lots mémorisés : revente à +X % du prix d’achat, nouvel achat plus bas, rachat au prix d’origine après une vente.",
     needsCandles: false,
   },
   {
@@ -196,9 +197,43 @@ export const BOT_CANDLE_INTERVALS = [
   { id: 1440, label: "1j" },
 ] as const;
 
-export function defaultParams(kind: BotKind, last: number): BotParams {
+/** Defaults before backtest tuning — used by signal unit tests on synthetic candles. */
+export function untunedParams(kind: BotKind, last: number): BotParams {
   return { ...baseParams(kind, last), ...profitDefaults(kind) };
 }
+
+export function defaultParams(kind: BotKind, last: number): BotParams {
+  return { ...baseParams(kind, last), ...profitDefaults(kind), ...(TUNED_DEFAULTS[kind] ?? {}) };
+}
+
+/** Per-kind overrides kept by the out-of-sample backtest tuning (scripts/bt/results). New bots only. */
+export const TUNED_DEFAULTS: Partial<Record<BotKind, Partial<BotParams>>> = {
+  adx: { adxFloor: 22, trendEma: 200 },
+  bollinger: { bbMult: 2.5, adxFloor: 22 },
+  breakout: { beAfterPct: 0, trendFilter: "strict" },
+  cci: { adxFloor: 22, trendFilter: "strict" },
+  confirm: { trendFilter: "strict" },
+  div: { adxFloor: 22, trendFilter: "strict" },
+  ema: { fast: 8, slow: 200, adxFloor: 22 },
+  engulf: { beAfterPct: 0, adxFloor: 22 },
+  ha: { cooldownSec: 14400, trendEma: 200 },
+  ichimoku: { adxFloor: 22, trendEma: 200 },
+  keltner: { adxFloor: 22, trendFilter: "strict" },
+  macd: { adxCeil: 25, trendFilter: "strict" },
+  meanrev: { zEntry: 2.5, adxFloor: 22 },
+  mfi: { adxFloor: 22, trendFilter: "strict" },
+  obv: { cooldownSec: 14400, trendEma: 200 },
+  psar: { adxFloor: 22, trendEma: 200 },
+  roc: { adxFloor: 22, cooldownSec: 14400 },
+  rsi: { adxCeil: 25 },
+  scalp: { fast: 8, slow: 50, adxFloor: 22 },
+  sma: { fast: 8, slow: 50, trendFilter: "strict" },
+  stoch: { adxFloor: 22, trendEma: 100 },
+  supertrend: { adxFloor: 22, trendEma: 200 },
+  volume: { adxCeil: 25, trendFilter: "strict" },
+  vwap: { adxFloor: 22, trendFilter: "strict" },
+  williams: { adxFloor: 22, trendEma: 100 },
+};
 
 export const MEAN_REVERSION = new Set<BotKind>([
   "rsi",
@@ -219,17 +254,30 @@ const RANGE_BREAK = new Set<BotKind>(["breakout", "volume", "engulf"]);
 /** Defaults that cut the two usual ways these bots lose money: knife-catches and fee churn. */
 export function profitDefaults(kind: BotKind): Partial<BotParams> {
   if (kind === "grid" || kind === "dca") return {};
-  if (RANGE_BREAK.has(kind)) return { slPct: 2.5, slAtr: 0, beAfterPct: 1.2, adxCeil: 0, adxFloor: 0, trendFilter: "soft" };
+  if (RANGE_BREAK.has(kind))
+    return { slPct: 2.5, slAtr: 0, beAfterPct: 1.2, adxCeil: 0, adxFloor: 0, trendFilter: "soft" };
   if (MEAN_REVERSION.has(kind)) {
-    return { adxCeil: 32, adxFloor: 0, slPct: 3.5, slAtr: 0, beAfterPct: 1.2, crashPct: 2.5, trendFilter: "soft" };
+    return {
+      adxCeil: 32,
+      adxFloor: 0,
+      slPct: 3.5,
+      slAtr: 0,
+      beAfterPct: 1.2,
+      crashPct: 2.5,
+      trendFilter: "soft",
+    };
   }
   return { adxFloor: 18, adxCeil: 0, slPct: 0, slAtr: 2, beAfterPct: 1.2, trendFilter: "soft" };
 }
 
 /** Risk chips must not arm the overlay stop on a grid — that flattens every lot. */
-export function riskPresetFor(kind: BotKind, preset: { params: Partial<BotParams> }): Partial<BotParams> {
+export function riskPresetFor(
+  kind: BotKind,
+  preset: { params: Partial<BotParams> },
+): Partial<BotParams> {
   if (kind !== "grid") return preset.params;
-  const { slPct, tpPct, trailingPct, slAtr, partialTp, maxHoldMin, trendEma, ...rest } = preset.params;
+  const { slPct, tpPct, trailingPct, slAtr, partialTp, maxHoldMin, trendEma, ...rest } =
+    preset.params;
   return {
     ...rest,
     slPct: 0,
@@ -283,7 +331,17 @@ function baseParams(kind: BotKind, last: number): BotParams {
   if (kind === "engulf") return {};
   if (kind === "obv") return { fast: 20 };
   if (kind === "div") return { rsiPeriod: 14, oversold: 40, overbought: 70 };
-  if (kind === "confirm") return { fast: 9, slow: 21, rsiPeriod: 14, oversold: 35, overbought: 70, macdFast: 12, macdSlow: 26, macdSignal: 9 };
+  if (kind === "confirm")
+    return {
+      fast: 9,
+      slow: 21,
+      rsiPeriod: 14,
+      oversold: 45,
+      overbought: 70,
+      macdFast: 12,
+      macdSlow: 26,
+      macdSignal: 9,
+    };
   if (kind === "mtf") {
     return {
       rsiPeriod: 14,

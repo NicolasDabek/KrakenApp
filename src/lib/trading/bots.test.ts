@@ -19,6 +19,7 @@ import {
   botWinRate,
   compareStrategies,
   defaultParams,
+  untunedParams,
   defaultSize,
   dropFormingCandle,
   evaluateBot,
@@ -93,7 +94,7 @@ function makeBot(kind: BotKind, extra: Partial<Bot> = {}): Bot {
     lastNote: "",
     stats: { ...EMPTY_STATS },
     ...rest,
-    params: { ...defaultParams(kind, 100), ...params },
+    params: { ...untunedParams(kind, 100), ...params },
     runtime: runtime ?? {},
   };
 }
@@ -130,7 +131,11 @@ describe("catalog", () => {
     assert.equal(defaultParams("mfi", 100).oversold, 20);
     assert.equal(defaultParams("mfi", 100).adxCeil, 32);
     assert.equal(defaultParams("rsi", 100).slPct, 3.5);
-    assert.equal(defaultParams("ema", 100).adxFloor, 18);
+    assert.equal(untunedParams("ema", 100).adxFloor, 18);
+    assert.equal(defaultParams("ema", 100).adxFloor, 22);
+    assert.equal(defaultParams("ema", 100).slow, 200);
+    assert.equal(defaultParams("meanrev", 100).zEntry, 2.5);
+    assert.equal(defaultParams("mtf", 100).adxCeil, 32);
     assert.equal(defaultParams("ema", 100).slAtr, 2);
     assert.equal(defaultParams("grid", 100).adxCeil, undefined);
     assert.deepEqual(profitDefaults("dca"), {});

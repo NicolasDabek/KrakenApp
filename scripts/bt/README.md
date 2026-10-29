@@ -21,7 +21,7 @@ node --experimental-strip-types scripts/bt/tune.ts [--kinds=ema,rsi] [--rounds=2
 
 - Point de départ : `defaultParams(kind)` actuel (`src/lib/trading/bots/catalog.ts`).
 - `--check` : rejoue seulement l'état actuel, sans chercher de candidats.
-- Résultats dans `scripts/bt/results/<kind>.json` (`before`, `after`, `kept`, `rejected`, `diff`, `perDataset`).
+- Résultats locaux dans `scripts/bt/results/<kind>.json` (`before`, `after`, `kept`, `rejected`, `diff`, `perDataset`) : dossier ignoré par git, ne pas le commiter. Les réglages retenus vivent dans `TUNED_DEFAULTS` (`catalog.ts`).
 - grid et dca sont exclus.
 
 ## 3. Règles d'acceptation

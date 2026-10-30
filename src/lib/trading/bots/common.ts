@@ -1,5 +1,5 @@
 import { atr } from "../indicators.ts";
-import type { Bot, BotParams, BotRuntime, BotStats, Candle, Ticker } from "../types.ts";
+import type { Bot, BotParams, BotRuntime, BotStats, Candle, OrderBook, Ticker } from "../types.ts";
 
 export const EMPTY_STATS: BotStats = {
   trades: 0,
@@ -97,6 +97,8 @@ export type BotEvalCtx = {
   maxFills?: number;
   /** Drop the uncommitted Kraken OHLC frame (live eval). Backtests keep the bar. */
   closedOnly?: boolean;
+  /** Carnet d'ordres récent de la paire, si disponible (live / papier). Absent en backtest. */
+  book?: OrderBook;
 };
 
 export function px(ctx: BotEvalCtx, side: "buy" | "sell"): number {

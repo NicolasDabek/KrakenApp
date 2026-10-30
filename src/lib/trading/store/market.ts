@@ -10,7 +10,7 @@ export const createMarketActions = (set: StoreSet, get: StoreGet): Pick<TradingS
       get().runBots();
     },
 
-    setBook: (pair, book) => set({ books: { ...get().books, [pair]: book } }),
+    setBook: (pair, book) => set({ books: { ...get().books, [pair]: { ...book, at: book.at ?? Date.now() } } }),
     setTape: (pair, trades) => set({ tapes: { ...get().tapes, [pair]: trades } }),
     setLive: (live, error = null) => set({ live, error }),
     setLastPair: (pair) => set({ lastPair: pair }),

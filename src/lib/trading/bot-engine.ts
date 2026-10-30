@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { dropFormingCandle, kindNeedsCandles, mtfIntervalsOf } from "./bots.ts";
-import { fetchOhlc } from "./functions.ts";
+import { BOOK_KINDS } from "./bots/catalog.ts";
+import { fetchDepth, fetchOhlc } from "./functions.ts";
 import { useTradingStore } from "./store.ts";
 import type { Bot } from "./types.ts";
 
@@ -34,6 +35,20 @@ export function useBotEngine() {
       const keys = [...new Set(bots.flatMap((b) => candleKeysForBot(b)))];
       if (keys.length === 0) return;
       fetching.current = true;
+      // Carnet des paires dont un bot utilise le filtre carnet (rafraîchi à chaque cycle).
+      const bookPairs = [
+        ...new Set(bots.filter((b) => BOOK_KINDS.has(b.kind) && (b.params.bookFilter ?? "off") !== "off").map((b) => b.pair)),
+      ];
+      await Promise.all(
+        bookPairs.map(async (pair) => {
+          try {
+            const book = await fetchDepth({ data: { pair } });
+            if (!cancelled) useTradingStore.getState().setBook(pair, book);
+          } catch {
+            /* sans carnet frais, le filtre ne bloque rien */
+          }
+        }),
+      );
       const bag: Record<string, Awaited<ReturnType<typeof fetchOhlc>>> = {};
       try {
         await Promise.all(

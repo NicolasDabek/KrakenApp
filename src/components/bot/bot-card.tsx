@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { botDeployed, botInventoryQty, botMark, BOT_KIND_BY_ID, botWinRate, gridFeePadPct, kindNeedsCandles, profitDefaults } from "@/lib/trading/bots";
 import { formatDateTime, formatFiat, formatQty } from "@/lib/trading/format";
 import { trendQuality } from "@/lib/trading/indicators";
+import { bookHint, scoreBook } from "@/lib/trading/book-score";
 import { EUR_PAIRS, PAIR_BY_ID, intervalLabel, toEurPair } from "@/lib/trading/pairs";
 import { downloadCsv } from "@/lib/trading/stats";
 import { useTradingStore } from "@/lib/trading/store";
@@ -495,6 +496,15 @@ function BotTrend({ bot }: { bot: Bot }) {
       <span className="text-[11px] text-subtle">
         Filtre {mode === "off" ? "off" : mode === "soft" ? "contre-tendance" : "solide seulement"}
       </span>
+      <BotBookHint bot={bot} />
     </div>
   );
+}
+
+/** Indice carnet compact, seulement si le bot utilise le filtre carnet et qu'un carnet est chargé. */
+function BotBookHint({ bot }: { bot: Bot }) {
+  const book = useTradingStore((s) => s.books[toEurPair(bot.pair)] ?? s.books[bot.pair]);
+  const hint = useMemo(() => bookHint(scoreBook(book)), [book]);
+  if ((bot.params.bookFilter ?? "off") === "off" || !hint) return null;
+  return <span className="text-[11px] text-subtle">{hint}</span>;
 }

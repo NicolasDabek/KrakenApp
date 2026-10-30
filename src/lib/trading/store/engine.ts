@@ -324,6 +324,7 @@ export const createEngineActions = (set: StoreSet, get: StoreGet): Pick<TradingS
             feeRate: bot.venue === "paper" ? paper.feeRate : get().settings.takerFee,
             maxFills: bot.venue === "live" ? 1 : undefined,
             closedOnly: true,
+            book: get().books[pair] ?? get().books[bot.pair],
           },
         );
         let next: Bot = { ...bot, pair, runtime, lastNote: note };

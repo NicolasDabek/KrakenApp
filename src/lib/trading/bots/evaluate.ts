@@ -1,6 +1,7 @@
 import { adx, atr, ema, trendQuality } from "../indicators.ts";
 import type { Bot, BotRuntime } from "../types.ts";
-import { MEAN_REVERSION } from "./catalog.ts";
+import { BOOK_MAX_AGE_MS, bookBuyBlock, scoreBook } from "../book-score.ts";
+import { BOOK_KINDS, MEAN_REVERSION } from "./catalog.ts";
 import { dropFormingCandle, markFlat, px, remainingQuoteBudget, roundSmart, tradingDay } from "./common.ts";
 import type { BotEvalCtx, BotFill } from "./common.ts";
 import { evalAdx } from "./strategies/adx.ts";
@@ -192,6 +193,14 @@ export function trendFilterNote(bot: Bot, ctx: BotEvalCtx): string | null {
   return block ? `Tendance ${tq.note} — pas d’achat` : null;
 }
 
+/** Filtre carnet : achats seulement, jamais les sorties (SL/TP/trailing/panique). Sans carnet frais : aucun effet. */
+export function bookFilterNote(bot: Bot, ctx: BotEvalCtx): string | null {
+  const mode = bot.params.bookFilter ?? "off";
+  if (mode === "off" || !BOOK_KINDS.has(bot.kind) || !ctx.book) return null;
+  if (ctx.book.at != null && ctx.now - ctx.book.at > BOOK_MAX_AGE_MS) return null;
+  return bookBuyBlock(scoreBook(ctx.book), mode);
+}
+
 function crashNote(bot: Bot, ctx: BotEvalCtx): string | null {
   if (!MEAN_REVERSION.has(bot.kind)) return null;
   const crash = bot.params.crashPct ?? 0;
@@ -218,7 +227,7 @@ function buyBlockReason(bot: Bot, ctx: BotEvalCtx, runtime: BotRuntime): string 
     const e = series[series.length - 1];
     if (e != null && last < e) return `Filtre EMA${Math.round(trendN)} baissier`;
   }
-  const regime = regimeNote(bot, ctx) ?? crashNote(bot, ctx) ?? trendFilterNote(bot, ctx);
+  const regime = regimeNote(bot, ctx) ?? crashNote(bot, ctx) ?? trendFilterNote(bot, ctx) ?? bookFilterNote(bot, ctx);
   if (regime) return regime;
   const spreadPct =
     ctx.ticker.ask > 0 && ctx.ticker.bid > 0 && last > 0
@@ -302,7 +311,7 @@ function applyRisk(
     }
   }
 
-  const regime = regimeNote(bot, ctx) ?? crashNote(bot, ctx) ?? trendFilterNote(bot, ctx);
+  const regime = regimeNote(bot, ctx) ?? crashNote(bot, ctx) ?? trendFilterNote(bot, ctx) ?? bookFilterNote(bot, ctx);
   if (regime) {
     fills = fills.filter((f) => f.side === "sell");
     if (fills.length === 0) note = regime;

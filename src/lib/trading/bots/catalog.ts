@@ -203,7 +203,7 @@ export function untunedParams(kind: BotKind, last: number): BotParams {
 }
 
 export function defaultParams(kind: BotKind, last: number): BotParams {
-  return { ...baseParams(kind, last), ...profitDefaults(kind), ...(TUNED_DEFAULTS[kind] ?? {}) };
+  return { ...baseParams(kind, last), ...profitDefaults(kind), ...(TUNED_DEFAULTS[kind] ?? {}), ...(BOOK_KINDS.has(kind) ? { bookFilter: "soft" as const } : {}) };
 }
 
 /** Per-kind overrides kept by the out-of-sample backtest tuning (scripts/bt/results). New bots only. */
@@ -248,6 +248,9 @@ export const MEAN_REVERSION = new Set<BotKind>([
   "div",
   "mtf",
 ]);
+
+/** Stratégies où le carnet sert de filtre d'entrée complémentaire (flux / cassure / réversion). */
+export const BOOK_KINDS = new Set<BotKind>(["scalp", "breakout", "volume", "engulf", "obv", "vwap", ...MEAN_REVERSION]);
 
 const RANGE_BREAK = new Set<BotKind>(["breakout", "volume", "engulf"]);
 

@@ -1,4 +1,4 @@
-import { DCA_INTERVALS, GRID_PRESETS, applyGridPreset, gridFeePadPct, kindNeedsCandles } from "@/lib/trading/bots";
+import { DCA_INTERVALS, GRID_PRESETS, applyGridPreset, gridFeePadPct, kindNeedsCandles, BOOK_KINDS } from "@/lib/trading/bots";
 import { formatFiat } from "@/lib/trading/format";
 import type { BotKind, BotParams } from "@/lib/trading/types";
 import { cn } from "@/lib/utils";
@@ -289,6 +289,18 @@ export function KindParamsFields({
           </p>
         </Field>
       )}
+      {BOOK_KINDS.has(kind) && (
+        <Field label="Carnet d’ordres (profondeur 5/10/25 niveaux)">
+          <Segmented
+            value={params.bookFilter ?? "off"}
+            onChange={(v) => patch({ bookFilter: v })}
+            options={BOOK_FILTER_OPTIONS}
+          />
+          <p className="mt-1 text-[11px] leading-relaxed text-subtle">
+            {BOOK_FILTER_HELP[params.bookFilter ?? "off"]} N’agit que sur les achats ; stop-loss, take-profit et sorties ne sont jamais bloqués. Sans carnet récent (backtest), aucun effet.
+          </p>
+        </Field>
+      )}
     </>
   );
 }
@@ -298,6 +310,18 @@ const TREND_FILTER_OPTIONS: { id: NonNullable<BotParams["trendFilter"]>; label: 
   { id: "soft", label: "Contre-tendance" },
   { id: "strict", label: "Solide seulement" },
 ];
+
+const BOOK_FILTER_OPTIONS: { id: NonNullable<BotParams["bookFilter"]>; label: string }[] = [
+  { id: "off", label: "Off" },
+  { id: "soft", label: "Souple" },
+  { id: "strict", label: "Strict" },
+];
+
+const BOOK_FILTER_HELP: Record<NonNullable<BotParams["bookFilter"]>, string> = {
+  off: "Le carnet n’est pas consulté.",
+  soft: "Pas d’achat si le carnet penche nettement côté vendeurs (score ≤ −50), face à un mur vendeur proche (≥ ×4 la médiane, < 0,5 %) ou si les acheteurs sont minces.",
+  strict: "Comme Souple, mais dès un score ≤ −20, et aussi si le spread dépasse 0,3 %.",
+};
 
 const TREND_FILTER_HELP: Record<NonNullable<BotParams["trendFilter"]>, string> = {
   off: "Aucun filtre : comportement historique.",

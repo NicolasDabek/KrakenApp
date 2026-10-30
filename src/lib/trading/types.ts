@@ -34,6 +34,8 @@ export type OrderBook = {
   asks: BookLevel[];
   spread: number;
   spreadPct: number;
+  /** Horodatage local de réception (ms). */
+  at?: number;
 };
 
 export type TapeTrade = {
@@ -341,6 +343,8 @@ export type BotParams = {
   trendEma?: number;
   /** Filtre qualité de tendance EMA 20/50 + volume sur les achats. Absent = off. */
   trendFilter?: "off" | "soft" | "strict";
+  /** Filtre carnet d'ordres (profondeur multi-niveaux) sur les achats. Absent = off. */
+  bookFilter?: "off" | "soft" | "strict";
   slAtr?: number;
   maxHoldMin?: number;
   sessionStart?: number;

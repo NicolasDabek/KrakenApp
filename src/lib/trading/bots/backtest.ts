@@ -228,7 +228,6 @@ function kindWarmup(kind: BotKind, params: BotParams): number {
   switch (kind) {
     case "sma":
       return n(params.slow, 200) + 8;
-    case "ema":
     case "scalp":
       return n(params.slow, 21) + 8;
     case "ichimoku":
@@ -241,8 +240,6 @@ function kindWarmup(kind: BotKind, params: BotParams): number {
       return n(params.atrPeriod, 10) + 16;
     case "breakout":
       return n(params.donchian, 20) + 6;
-    case "obv":
-      return n(params.fast, 20) + 8;
     case "div":
       return n(params.rsiPeriod, 14) + 20;
     case "confirm":
@@ -286,7 +283,7 @@ export type OptRow = { params: BotParams; label: string; result: BacktestResult 
 export function paramVariants(kind: BotKind, base: BotParams): { params: BotParams; label: string }[] {
   const rows: { params: BotParams; label: string }[] = [{ params: base, label: "Actuel" }];
   const add = (label: string, p: Partial<BotParams>) => rows.push({ params: { ...base, ...p }, label });
-  if (kind === "rsi" || kind === "mfi" || kind === "stoch" || kind === "div" || kind === "confirm" || kind === "mtf") {
+  if (kind === "rsi" || kind === "stoch" || kind === "div" || kind === "confirm" || kind === "mtf") {
     for (const os of [20, 25, 30, 35]) {
       for (const ob of [65, 70, 75, 80]) add(`os ${os} / ob ${ob}`, { oversold: os, overbought: ob });
     }
@@ -299,21 +296,13 @@ export function paramVariants(kind: BotKind, base: BotParams): { params: BotPara
       add("higherAgree 15/60/240", { mtfIntervals: [60, 240], mtfMode: "higherAgree" });
       add("majority 5/15/60", { mtfIntervals: [15, 60], mtfMode: "majority" });
     }
-  } else if (kind === "williams") {
-    for (const os of [-90, -80, -70]) {
-      for (const ob of [-30, -20, -10]) add(`os ${os} / ob ${ob}`, { oversold: os, overbought: ob });
-    }
   } else if (kind === "cci") {
     for (const os of [-150, -100, -80]) {
       for (const ob of [80, 100, 150]) add(`os ${os} / ob ${ob}`, { oversold: os, overbought: ob });
     }
-  } else if (kind === "ema" || kind === "scalp" || kind === "sma" || kind === "obv") {
+  } else if (kind === "scalp" || kind === "sma") {
     for (const fast of [5, 8, 9, 12, 21]) {
       for (const slow of [13, 21, 50, 200]) {
-        if (kind === "obv") {
-          add(`EMA ${fast}`, { fast });
-          break;
-        }
         if (slow > fast) add(`${fast}/${slow}`, { fast, slow });
       }
     }
@@ -321,8 +310,6 @@ export function paramVariants(kind: BotKind, base: BotParams): { params: BotPara
     add("8/17/9", { macdFast: 8, macdSlow: 17, macdSignal: 9 });
     add("12/26/9", { macdFast: 12, macdSlow: 26, macdSignal: 9 });
     add("5/35/5", { macdFast: 5, macdSlow: 35, macdSignal: 5 });
-  } else if (kind === "bollinger") {
-    for (const p of [14, 20, 30]) for (const m of [1.5, 2, 2.5]) add(`n${p} ×${m}`, { bbPeriod: p, bbMult: m });
   } else if (kind === "breakout") {
     for (const d of [10, 20, 55]) add(`Donchian ${d}`, { donchian: d });
   } else if (kind === "supertrend") {

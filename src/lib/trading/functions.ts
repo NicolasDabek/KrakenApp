@@ -238,8 +238,6 @@ const BotKindSchema = z.enum([
   "grid",
   "dca",
   "rsi",
-  "ema",
-  "bollinger",
   "macd",
   "stoch",
   "vwap",
@@ -252,14 +250,9 @@ const BotKindSchema = z.enum([
   "keltner",
   "roc",
   "adx",
-  "williams",
   "ichimoku",
-  "psar",
   "sma",
-  "ha",
-  "mfi",
   "engulf",
-  "obv",
   "div",
 ]);
 

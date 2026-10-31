@@ -99,13 +99,13 @@ describe("handleV1 public routes", () => {
     assert.equal(bad.body.ok, false);
   });
 
-  it("accepts mfi on the evaluate endpoint", async () => {
+  it("accepts stoch on the evaluate endpoint", async () => {
     const res = await jsonOf(
       await handleV1(
         "POST",
         req("POST", "bots/evaluate", {
           body: {
-            kind: "mfi",
+            kind: "stoch",
             pair: "XBTEUR",
             interval: 15,
             sizeQuote: 50,

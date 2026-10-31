@@ -51,30 +51,17 @@ export function KindParamsFields({
           <NumField label="Surachat" value={params.overbought ?? 70} onChange={(v) => patch({ overbought: v })} />
         </div>
       )}
-      {(kind === "ema" || kind === "scalp") && (
+      {kind === "scalp" && (
         <div className="grid grid-cols-2 gap-2">
-          <NumField label="EMA rapide" value={params.fast ?? (kind === "scalp" ? 5 : 9)} onChange={(v) => patch({ fast: v })} />
-          <NumField label="EMA lente" value={params.slow ?? (kind === "scalp" ? 13 : 21)} onChange={(v) => patch({ slow: v })} />
+          <NumField label="EMA rapide" value={params.fast ?? 5} onChange={(v) => patch({ fast: v })} />
+          <NumField label="EMA lente" value={params.slow ?? 13} onChange={(v) => patch({ slow: v })} />
         </div>
       )}
       {kind === "scalp" && (
         <NumField label="RSI scalp" value={params.rsiPeriod ?? 7} onChange={(v) => patch({ rsiPeriod: v })} />
       )}
-      {kind === "mfi" && (
-        <div className="grid grid-cols-3 gap-2">
-          <NumField label="Période" value={params.rsiPeriod ?? 14} onChange={(v) => patch({ rsiPeriod: v })} />
-          <NumField label="Sous-flux" value={params.oversold ?? 20} onChange={(v) => patch({ oversold: v })} />
-          <NumField label="Sur-flux" value={params.overbought ?? 80} onChange={(v) => patch({ overbought: v })} />
-        </div>
-      )}
       {kind === "engulf" && (
         <p className="text-xs leading-relaxed text-subtle">Pas de paramètre d’indicateur — uniquement le motif de bougie.</p>
-      )}
-      {kind === "bollinger" && (
-        <div className="grid grid-cols-2 gap-2">
-          <NumField label="Période" value={params.bbPeriod ?? 20} onChange={(v) => patch({ bbPeriod: v })} />
-          <NumField label="Écart-type" value={params.bbMult ?? 2} onChange={(v) => patch({ bbMult: v })} />
-        </div>
       )}
       {kind === "macd" && (
         <div className="grid grid-cols-3 gap-2">
@@ -130,23 +117,10 @@ export function KindParamsFields({
           <NumField label="ADX min" value={params.adxMin ?? 20} onChange={(v) => patch({ adxMin: v })} />
         </div>
       )}
-      {kind === "williams" && (
-        <div className="grid grid-cols-3 gap-2">
-          <NumField label="N" value={params.wrPeriod ?? 14} onChange={(v) => patch({ wrPeriod: v })} />
-          <NumField label="Survente" value={params.oversold ?? -80} onChange={(v) => patch({ oversold: v })} />
-          <NumField label="Surachat" value={params.overbought ?? -20} onChange={(v) => patch({ overbought: v })} />
-        </div>
-      )}
       {kind === "ichimoku" && (
         <div className="grid grid-cols-2 gap-2">
           <NumField label="Tenkan" value={params.tenkan ?? 9} onChange={(v) => patch({ tenkan: v })} />
           <NumField label="Kijun" value={params.kijun ?? 26} onChange={(v) => patch({ kijun: v })} />
-        </div>
-      )}
-      {kind === "psar" && (
-        <div className="grid grid-cols-2 gap-2">
-          <NumField label="AF" value={params.psarAf ?? 0.02} onChange={(v) => patch({ psarAf: v })} />
-          <NumField label="AF max" value={params.psarMax ?? 0.2} onChange={(v) => patch({ psarMax: v })} />
         </div>
       )}
       {kind === "sma" && (
@@ -154,9 +128,6 @@ export function KindParamsFields({
           <NumField label="SMA rapide" value={params.fast ?? 50} onChange={(v) => patch({ fast: v })} />
           <NumField label="SMA lente" value={params.slow ?? 200} onChange={(v) => patch({ slow: v })} />
         </div>
-      )}
-      {kind === "obv" && (
-        <NumField label="EMA de l’OBV" value={params.fast ?? 20} onChange={(v) => patch({ fast: v })} />
       )}
       {kind === "div" && (
         <div className="grid grid-cols-3 gap-2">

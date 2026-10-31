@@ -63,7 +63,7 @@ describe("bookFilterNote", () => {
     assert.equal(bookFilterNote(bot("scalp"), ctx(heavy)), null);
     assert.equal(bookFilterNote(bot("grid", "strict"), ctx(heavy)), null);
     assert.equal(bookFilterNote(bot("dca", "strict"), ctx(heavy)), null);
-    assert.equal(bookFilterNote(bot("ema", "strict"), ctx(heavy)), null);
+    assert.equal(bookFilterNote(bot("sma", "strict"), ctx(heavy)), null);
     assert.equal(bookFilterNote(bot("scalp", "soft"), ctx(undefined)), null);
     assert.equal(bookFilterNote(bot("scalp", "soft"), ctx(heavy, 60_000)), null);
   });
@@ -74,7 +74,7 @@ describe("bookFilterNote", () => {
   it("defaults: soft for book kinds on new bots, absent elsewhere and in untuned params", () => {
     assert.equal(defaultParams("scalp", 100).bookFilter, "soft");
     assert.equal(defaultParams("breakout", 100).bookFilter, "soft");
-    assert.equal(defaultParams("ema", 100).bookFilter, undefined);
+    assert.equal(defaultParams("sma", 100).bookFilter, undefined);
     assert.equal(defaultParams("grid", 100).bookFilter, undefined);
     assert.equal(untunedParams("scalp", 100).bookFilter, undefined);
   });

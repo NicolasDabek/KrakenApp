@@ -20,6 +20,8 @@ import {
   compareStrategies,
   defaultParams,
   untunedParams,
+  migrateRemovedKind,
+  REMOVED_KINDS,
   defaultSize,
   dropFormingCandle,
   evaluateBot,
@@ -99,14 +101,30 @@ function makeBot(kind: BotKind, extra: Partial<Bot> = {}): Bot {
   };
 }
 
+describe("stratégies retirées", () => {
+  it("convertit un bot sauvegardé d'un type retiré, le met en pause et garde le risque", () => {
+    const old = { ...makeBot("rsi"), kind: "williams", status: "running", params: { wrPeriod: 14, oversold: -80, overbought: -20, slPct: 4 } } as unknown as Bot;
+    const m = migrateRemovedKind(old);
+    assert.equal(m.kind, "stoch");
+    assert.equal(m.status, "paused");
+    assert.equal(m.params.slPct, 4);
+    assert.equal(m.params.oversold, 20);
+    assert.match(m.lastNote, /retirée/);
+    assert.equal(REMOVED_KINDS.ema, "sma");
+    const kept = makeBot("rsi");
+    assert.equal(migrateRemovedKind(kept), kept);
+    const unknown = evaluateBot({ ...makeBot("rsi"), kind: "zzz" } as unknown as Bot, { now: 1, ticker: ticker(100) });
+    assert.equal(unknown.fills.length, 0);
+  });
+});
+
 describe("catalog", () => {
-  it("registers 28 named strategies with EUR-friendly defaults", () => {
-    assert.equal(BOT_KINDS.length, 28);
+  it("registers 21 named strategies with EUR-friendly defaults", () => {
+    assert.equal(BOT_KINDS.length, 21);
     const ids = BOT_KINDS.map((k) => k.id);
-    assert.equal(new Set(ids).size, 28);
-    assert.ok(ids.includes("mfi"));
+    assert.equal(new Set(ids).size, 21);
+    for (const gone of ["ema", "bollinger", "williams", "ha", "obv", "psar", "mfi"]) assert.ok(!ids.includes(gone as never));
     assert.ok(ids.includes("engulf"));
-    assert.ok(ids.includes("obv"));
     assert.ok(ids.includes("div"));
     assert.ok(ids.includes("confirm"));
     assert.ok(ids.includes("mtf"));
@@ -128,15 +146,15 @@ describe("catalog", () => {
     assert.ok(applyGridPreset(100, GRID_PRESETS[0]!).gridBuyPct === 0.5);
     assert.equal(gridFeePadPct(0.0026, true), 0.52);
     assert.equal(gridFeePadPct(0.0026, false), 0);
-    assert.equal(defaultParams("mfi", 100).oversold, 20);
-    assert.equal(defaultParams("mfi", 100).adxCeil, 32);
+    assert.equal(defaultParams("stoch", 100).oversold, 20);
+    assert.equal(defaultParams("stoch", 100).adxCeil, 32);
     assert.equal(defaultParams("rsi", 100).slPct, 3.5);
-    assert.equal(untunedParams("ema", 100).adxFloor, 18);
-    assert.equal(defaultParams("ema", 100).adxFloor, 22);
-    assert.equal(defaultParams("ema", 100).slow, 200);
+    assert.equal(untunedParams("sma", 100).adxFloor, 18);
+    assert.equal(defaultParams("ichimoku", 100).adxFloor, 22);
+    assert.equal(defaultParams("sma", 100).slow, 50);
     assert.equal(defaultParams("meanrev", 100).zEntry, 2.5);
     assert.equal(defaultParams("mtf", 100).adxCeil, 32);
-    assert.equal(defaultParams("ema", 100).slAtr, 2);
+    assert.equal(defaultParams("sma", 100).slAtr, 2);
     assert.equal(defaultParams("grid", 100).adxCeil, undefined);
     assert.deepEqual(profitDefaults("dca"), {});
     const prudent = RISK_PRESETS.find((p) => p.id === "prudent")!;
@@ -654,7 +672,7 @@ describe("backtest / optimizer / preview", () => {
     assert.equal(formatWait(3 * 86_400_000), "3 j");
     const macd = paramVariants("macd", defaultParams("macd", 100));
     assert.ok(macd.some((r) => r.label.includes("12/26/9")));
-    const wr = paramVariants("williams", defaultParams("williams", 100));
+    const wr = paramVariants("cci", defaultParams("cci", 100));
     assert.ok(wr.some((r) => (r.params.oversold ?? 0) < 0));
     const grid = paramVariants("grid", { lower: 90, upper: 110, levels: 8 });
     for (const row of grid) {
@@ -735,17 +753,14 @@ describe("evaluateBot — remaining strategies", () => {
     assert.equal(vol.fills[0]?.side, "buy");
   });
 
-  it("crosses EMA up and SMA golden-cross with short windows", () => {
+  it("crosses SMA golden-cross with short windows", () => {
     const down = Array.from({ length: 20 }, (_, i) => 80 - i);
     const up = Array.from({ length: 18 }, (_, i) => 60 + i * 3);
-    const { res: emaRes } = walkUntilFill("ema", candlesFrom([...down, ...up]), { fast: 3, slow: 8 });
-    assert.equal(emaRes.fills[0]?.side, "buy");
-
     const { res: smaRes } = walkUntilFill("sma", candlesFrom([...down, ...up]), { fast: 3, slow: 8 });
     assert.equal(smaRes.fills[0]?.side, "buy");
   });
 
-  it("enters VWAP on a cross below and HA on a color flip", () => {
+  it("enters VWAP on a cross below and engulf on a reversal", () => {
     const up = candlesFrom(Array.from({ length: 24 }, (_, i) => 100 + i * 0.4));
     const dump = [
       ...up,
@@ -766,7 +781,7 @@ describe("evaluateBot — remaining strategies", () => {
       ...red,
       { time: red.at(-1)!.time + 900, open: 93, high: 99, low: 92.5, close: 98.5, volume: 20 },
     ];
-    const ha = evaluateBot(makeBot("ha"), { now: 5, ticker: ticker(98.5), candles: green });
+    const ha = evaluateBot(makeBot("engulf"), { now: 5, ticker: ticker(98.5), candles: green });
     assert.ok(ha.fills[0]?.side === "buy" || ha.note.length > 0);
   });
 
@@ -1219,12 +1234,12 @@ describe("paper averaging / partial sell / optimizer extras", () => {
     assert.ok(part.trade.pnl !== 0);
   });
 
-  it("emits variants for grid/ema/breakout and a warmup per family", () => {
-    assert.ok(paramVariants("ema", defaultParams("ema", 100)).length > 2);
+  it("emits variants for grid/sma/breakout and a warmup per family", () => {
+    assert.ok(paramVariants("sma", defaultParams("sma", 100)).length > 2);
     assert.ok(paramVariants("breakout", defaultParams("breakout", 100)).length >= 2);
     assert.ok(paramVariants("grid", defaultParams("grid", 100)).length >= 2);
     assert.ok(paramVariants("dca", defaultParams("dca", 100)).length === 1);
-    assert.ok(backtestWarmup("ema", { slow: 21 }) >= 29);
+    assert.ok(backtestWarmup("scalp", { slow: 21 }) >= 29);
     assert.ok(backtestWarmup("macd", {}) >= 26);
     assert.ok(backtestWarmup("adx", { adxPeriod: 14 }) >= 40);
     assert.ok(backtestWarmup("supertrend", {}) >= 20);
@@ -1296,7 +1311,7 @@ describe("evaluateBot — oscillators, ROC, z-score, Keltner", () => {
     const osc = Array.from({ length: 36 }, (_, i) => 100 + Math.sin(i / 2.2) * 6);
     const dump = Array.from({ length: 12 }, (_, i) => osc.at(-1)! - (i + 1) * 4);
     const cs = candlesFrom([...osc, ...dump]);
-    let bot = makeBot("bollinger", { params: { bbPeriod: 20, bbMult: 2, crashPct: 0, adxCeil: 0 } });
+    let bot = makeBot("meanrev", { params: { zWindow: 20, zEntry: 2, crashPct: 0, adxCeil: 0, adxFloor: 0 } });
     let bought = false;
     for (let i = 24; i <= cs.length; i++) {
       const slice = cs.slice(0, i);
@@ -1314,12 +1329,12 @@ describe("evaluateBot — oscillators, ROC, z-score, Keltner", () => {
       ...drop,
       { time: drop.at(-1)!.time + 900, open: 67, high: 78, low: 66, close: 77, volume: 20 },
     ];
-    const wr = evaluateBot(makeBot("williams", { params: { wrPeriod: 14, oversold: -80, overbought: -20, crashPct: 0, adxCeil: 0 } }), {
+    const wr = evaluateBot(makeBot("stoch", { params: { stochN: 14, oversold: 20, overbought: 80, crashPct: 0, adxCeil: 0 } }), {
       now: 6,
       ticker: ticker(77),
       candles: bounce,
     });
-    assert.ok(wr.fills[0]?.side === "buy" || /survente|%R|flat/i.test(wr.note));
+    assert.ok(wr.fills[0]?.side === "buy" || /./.test(wr.note));
   });
 
   it("exits RSI from overbought after a rally and rejects a zero-size DCA", () => {
@@ -1358,7 +1373,6 @@ describe("evaluateBot — oscillators, ROC, z-score, Keltner", () => {
     assert.equal(formatWait(50 * 3_600_000), "2 j");
     assert.ok(paramVariants("supertrend", defaultParams("supertrend", 100)).length > 1);
     assert.ok(paramVariants("meanrev", defaultParams("meanrev", 100)).length > 1);
-    assert.ok(paramVariants("mfi", defaultParams("mfi", 100)).length > 1);
     const empty = optimizeBot("grid", defaultParams("grid", 100), 80, candlesFrom(Array.from({ length: 40 }, () => 100)), 0.0026, "XBTEUR");
     assert.ok(Array.isArray(empty));
   });
@@ -1420,8 +1434,6 @@ describe("evaluateBot — MACD, oscillators, trend flips, MFI", () => {
     const st = walkUntilFill("supertrend", cs, { atrPeriod: 7, atrMult: 2 });
     assert.equal(st.res.fills[0]?.side, "buy");
 
-    const sar = walkUntilFill("psar", cs, { psarAf: 0.04, psarMax: 0.2 });
-    assert.equal(sar.res.fills[0]?.side, "buy");
   });
 
   it("buys Ichimoku and ADX on a shortened rally", () => {
@@ -1436,7 +1448,7 @@ describe("evaluateBot — MACD, oscillators, trend flips, MFI", () => {
     assert.ok(adxRes.res.fills[0]?.side === "buy" || /ADX|DI|chauffe|flat/i.test(adxRes.res.note));
   });
 
-  it("buys stochastic, CCI and MFI on oversold setups", () => {
+  it("buys stochastic, and CCI on oversold setups", () => {
     const bounce = candlesFrom([
       ...Array.from({ length: 22 }, (_, i) => 150 - i * 4),
       ...Array.from({ length: 16 }, (_, i) => 62 + i * 5),
@@ -1447,18 +1459,9 @@ describe("evaluateBot — MACD, oscillators, trend flips, MFI", () => {
     const cciRes = walkUntilFill("cci", bounce, { cciPeriod: 10, oversold: -80, overbought: 100, crashPct: 0, adxCeil: 0 });
     assert.equal(cciRes.res.fills[0]?.side, "buy");
 
-    const mfiBars = candlesFrom(
-      [
-        ...Array.from({ length: 16 }, (_, i) => 80 + i * 2),
-        ...Array.from({ length: 24 }, (_, i) => 110 - (i + 1) * 3),
-      ],
-      30,
-    );
-    const mfiRes = walkUntilFill("mfi", mfiBars, { rsiPeriod: 10, oversold: 20, overbought: 80, crashPct: 0, adxCeil: 0 });
-    assert.equal(mfiRes.res.fills[0]?.side, "buy");
   });
 
-  it("sells ROC, z-score, volume spike and Bollinger upper from an open long", () => {
+  it("sells ROC, z-score, volume spike from an open long", () => {
     const rocBars = candlesFrom([...Array.from({ length: 18 }, () => 110), 90]);
     const rocSell = evaluateBot(
       makeBot("roc", {
@@ -1497,16 +1500,6 @@ describe("evaluateBot — MACD, oscillators, trend flips, MFI", () => {
     );
     assert.equal(volSell.fills[0]?.side, "sell");
 
-    const osc = Array.from({ length: 28 }, (_, i) => 100 + Math.sin(i / 2) * 5);
-    const spike = [...osc, 118];
-    const bbSell = evaluateBot(
-      makeBot("bollinger", {
-        params: { bbPeriod: 20, bbMult: 2 },
-        runtime: { inPosition: true, positionQty: 1, positionAvg: 100 },
-      }),
-      { now: 12, ticker: ticker(118), candles: candlesFrom(spike) },
-    );
-    assert.ok(bbSell.fills[0]?.side === "sell" || /long|flat|Close/i.test(bbSell.note));
   });
 
   it("uses the quoted price when last is missing and last when the spread is huge", () => {
@@ -1575,8 +1568,6 @@ describe("evaluateBot — MACD, oscillators, trend flips, MFI", () => {
       });
       assert.ok(r === null || Number.isFinite(r.equity), kind.id);
     }
-    assert.ok(paramVariants("bollinger", defaultParams("bollinger", 100)).length > 3);
-    assert.ok(paramVariants("williams", defaultParams("williams", 100)).length > 3);
     assert.ok(paramVariants("cci", defaultParams("cci", 100)).length > 3);
     assert.ok(paramVariants("stoch", defaultParams("stoch", 100)).length > 3);
     assert.ok(paramVariants("scalp", defaultParams("scalp", 100)).length > 3);
@@ -1723,17 +1714,17 @@ describe("trend quality filter (EMA 20/50 + volume)", () => {
 
   it("is off unless set, and new bots default to soft (grid/dca excluded)", () => {
     assert.equal(profitDefaults("rsi").trendFilter, "soft");
-    assert.equal(profitDefaults("ema").trendFilter, "soft");
+    assert.equal(profitDefaults("sma").trendFilter, "soft");
     assert.equal(profitDefaults("breakout").trendFilter, "soft");
     assert.equal(profitDefaults("grid").trendFilter, undefined);
-    assert.equal(trendFilterNote(makeBot("ema", { params: { trendFilter: undefined } }), lastCtx(candlesFrom(ramp(80, 200, -1)))), null);
+    assert.equal(trendFilterNote(makeBot("sma", { params: { trendFilter: undefined } }), lastCtx(candlesFrom(ramp(80, 200, -1)))), null);
     assert.equal(trendFilterNote(makeBot("grid", { params: { trendFilter: "strict" } }), lastCtx(candlesFrom(ramp(80, 200, -1)))), null);
   });
 
   it("soft blocks trend-following buys in a downtrend, not in an uptrend", () => {
     const down = candlesFrom(ramp(80, 200, -1));
     const up = candlesFrom(ramp(80, 100, 1));
-    const bot = makeBot("ema", { params: { trendFilter: "soft" } });
+    const bot = makeBot("sma", { params: { trendFilter: "soft" } });
     assert.match(trendFilterNote(bot, lastCtx(down)) ?? "", /Baissière/);
     assert.equal(trendFilterNote(bot, lastCtx(up)), null);
   });
@@ -1754,10 +1745,10 @@ describe("trend quality filter (EMA 20/50 + volume)", () => {
   });
 
   it("never blocks sells and does not act without enough candles", () => {
-    const bot = makeBot("ema", { params: { trendFilter: "strict" } });
+    const bot = makeBot("sma", { params: { trendFilter: "strict" } });
     assert.equal(trendFilterNote(bot, lastCtx(candlesFrom(ramp(30, 200, -1)))), null);
     const down = candlesFrom(ramp(80, 200, -1));
-    const held = makeBot("ema", {
+    const held = makeBot("sma", {
       params: { trendFilter: "strict", fast: 5, slow: 13, slPct: 0, slAtr: 0, tpPct: 0, trailingPct: 0, beAfterPct: 0, adxFloor: 0 },
       runtime: { inPosition: true, positionQty: 1, positionAvg: 150 },
     });

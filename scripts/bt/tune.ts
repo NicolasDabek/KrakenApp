@@ -63,8 +63,6 @@ function candidates(kind: BotKind, base: BotParams): { label: string; params: Bo
   // signal-parameter candidates for the kinds paramVariants doesn't cover
   if (kind === "volume") for (const v of [2, 3]) add(`volume ×${v}`, { volMult: v });
   if (kind === "roc") for (const n of [9, 21]) add(`ROC ${n}`, { rocPeriod: n });
-  if (kind === "williams") for (const n of [21, 28]) add(`%R ${n}`, { wrPeriod: n });
-  if (kind === "obv") add("EMA 21", { fast: 21 });
   // drop no-op candidates (same params as base)
   const key = (p: BotParams) => JSON.stringify(Object.entries(p).sort());
   const seen = new Set([key(base)]);
@@ -121,6 +119,6 @@ for (const kind of kinds) {
 const f = (a: { pnl: number; trades: number; dd: number; win: number }) => `${a.pnl.toFixed(0)} / ${a.trades} / ${a.dd.toFixed(1)} / ${a.win.toFixed(0)}`;
 const md = ["| bot | IS avant (PnL, trades, DD%, win%) | IS après | OOS avant | OOS après | changement |", "|---|---|---|---|---|---|"];
 for (const [k, s] of Object.entries(summary) as [string, { before: any; after: any; diff: object }][]) md.push(`| ${k} | ${f(s.before.is)} | ${f(s.after.is)} | ${f(s.before.oos)} | ${f(s.after.oos)} | ${JSON.stringify(s.diff)} |`);
-writeFileSync(new URL(`./results/${CHECK ? "check" : "summary"}-${kinds.length === 26 ? "all" : kinds.join("_")}.md`, import.meta.url), md.join("\n") + "\n");
+writeFileSync(new URL(`./results/${CHECK ? "check" : "summary"}-${kinds.length === 19 ? "all" : kinds.join("_")}.md`, import.meta.url), md.join("\n") + "\n");
 console.log(md.join("\n"));
 await Promise.all(workers.map((w) => w.terminate()));

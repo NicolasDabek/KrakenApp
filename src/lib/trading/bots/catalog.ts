@@ -27,18 +27,6 @@ export const BOT_KINDS: {
     needsCandles: true,
   },
   {
-    id: "ema",
-    title: "Croisement EMA",
-    blurb: "Suit la tendance au croisement de deux moyennes.",
-    needsCandles: true,
-  },
-  {
-    id: "bollinger",
-    title: "Bandes de Bollinger",
-    blurb: "Rebond sur la bande basse, allègement sur la haute.",
-    needsCandles: true,
-  },
-  {
     id: "macd",
     title: "Momentum MACD",
     blurb: "Entre au passage de l’histogramme en positif.",
@@ -111,21 +99,9 @@ export const BOT_KINDS: {
     needsCandles: true,
   },
   {
-    id: "williams",
-    title: "Williams %R",
-    blurb: "Reversion sur le %R, cousin du Stochastic.",
-    needsCandles: true,
-  },
-  {
     id: "ichimoku",
     title: "Ichimoku",
     blurb: "Croisement Tenkan / Kijun filtré par le nuage.",
-    needsCandles: true,
-  },
-  {
-    id: "psar",
-    title: "Parabolic SAR",
-    blurb: "Suit le flip de la parabole de Wilder.",
     needsCandles: true,
   },
   {
@@ -135,27 +111,9 @@ export const BOT_KINDS: {
     needsCandles: true,
   },
   {
-    id: "ha",
-    title: "Heikin-Ashi",
-    blurb: "Entre au retournement des bougies lissées.",
-    needsCandles: true,
-  },
-  {
-    id: "mfi",
-    title: "Money Flow",
-    blurb: "RSI pondéré par le volume : entre en sous-flux, sort en sur-flux.",
-    needsCandles: true,
-  },
-  {
     id: "engulf",
     title: "Engulfing",
     blurb: "Entre sur une bougie d’engloutissement haussière, sort à la baissière.",
-    needsCandles: true,
-  },
-  {
-    id: "obv",
-    title: "OBV",
-    blurb: "Suit le flux de volume : entre quand l’OBV croise au-dessus de son EMA.",
     needsCandles: true,
   },
   {
@@ -209,21 +167,15 @@ export function defaultParams(kind: BotKind, last: number): BotParams {
 /** Per-kind overrides kept by the out-of-sample backtest tuning (scripts/bt/results). New bots only. */
 export const TUNED_DEFAULTS: Partial<Record<BotKind, Partial<BotParams>>> = {
   adx: { adxFloor: 22, trendEma: 200 },
-  bollinger: { bbMult: 2.5, adxFloor: 22 },
   breakout: { beAfterPct: 0, trendFilter: "strict" },
   cci: { adxFloor: 22, trendFilter: "strict" },
   confirm: { trendFilter: "strict" },
   div: { adxFloor: 22, trendFilter: "strict" },
-  ema: { fast: 8, slow: 200, adxFloor: 22 },
   engulf: { beAfterPct: 0, adxFloor: 22 },
-  ha: { cooldownSec: 14400, trendEma: 200 },
   ichimoku: { adxFloor: 22, trendEma: 200 },
   keltner: { adxFloor: 22, trendFilter: "strict" },
   macd: { adxCeil: 25, trendFilter: "strict" },
   meanrev: { zEntry: 2.5, adxFloor: 22 },
-  mfi: { adxFloor: 22, trendFilter: "strict" },
-  obv: { cooldownSec: 14400, trendEma: 200 },
-  psar: { adxFloor: 22, trendEma: 200 },
   roc: { adxFloor: 22, cooldownSec: 14400 },
   rsi: { adxCeil: 25 },
   scalp: { fast: 8, slow: 50, adxFloor: 22 },
@@ -232,25 +184,21 @@ export const TUNED_DEFAULTS: Partial<Record<BotKind, Partial<BotParams>>> = {
   supertrend: { adxFloor: 22, trendEma: 200 },
   volume: { adxCeil: 25, trendFilter: "strict" },
   vwap: { adxFloor: 22, trendFilter: "strict" },
-  williams: { adxFloor: 22, trendEma: 100 },
 };
 
 export const MEAN_REVERSION = new Set<BotKind>([
   "rsi",
-  "bollinger",
   "stoch",
   "vwap",
   "cci",
   "meanrev",
   "keltner",
-  "williams",
-  "mfi",
   "div",
   "mtf",
 ]);
 
 /** Stratégies où le carnet sert de filtre d'entrée complémentaire (flux / cassure / réversion). */
-export const BOOK_KINDS = new Set<BotKind>(["scalp", "breakout", "volume", "engulf", "obv", "vwap", ...MEAN_REVERSION]);
+export const BOOK_KINDS = new Set<BotKind>(["scalp", "breakout", "volume", "engulf", "vwap", ...MEAN_REVERSION]);
 
 const RANGE_BREAK = new Set<BotKind>(["breakout", "volume", "engulf"]);
 
@@ -312,8 +260,6 @@ function baseParams(kind: BotKind, last: number): BotParams {
   }
   if (kind === "dca") return { intervalMs: 300_000 };
   if (kind === "rsi") return { rsiPeriod: 14, oversold: 30, overbought: 70 };
-  if (kind === "ema") return { fast: 9, slow: 21 };
-  if (kind === "bollinger") return { bbPeriod: 20, bbMult: 2 };
   if (kind === "stoch") return { stochN: 14, oversold: 20, overbought: 80 };
   if (kind === "vwap") return {};
   if (kind === "breakout") return { donchian: 20 };
@@ -325,14 +271,9 @@ function baseParams(kind: BotKind, last: number): BotParams {
   if (kind === "keltner") return { kcPeriod: 20, kcMult: 1.5 };
   if (kind === "roc") return { rocPeriod: 12 };
   if (kind === "adx") return { adxPeriod: 14, adxMin: 20 };
-  if (kind === "williams") return { wrPeriod: 14, oversold: -80, overbought: -20 };
   if (kind === "ichimoku") return { tenkan: 9, kijun: 26 };
-  if (kind === "psar") return { psarAf: 0.02, psarMax: 0.2 };
   if (kind === "sma") return { fast: 50, slow: 200 };
-  if (kind === "ha") return {};
-  if (kind === "mfi") return { rsiPeriod: 14, oversold: 20, overbought: 80 };
   if (kind === "engulf") return {};
-  if (kind === "obv") return { fast: 20 };
   if (kind === "div") return { rsiPeriod: 14, oversold: 40, overbought: 70 };
   if (kind === "confirm")
     return {
@@ -427,3 +368,34 @@ export const RISK_PRESETS: { id: string; label: string; params: Partial<BotParam
     },
   },
 ];
+
+/**
+ * Stratégies retirées (doublons moins efficaces en backtest OOS, 01/11/2026) → remplaçante la plus proche.
+ * Un bot sauvegardé avec un de ces types est converti au chargement, mis en pause, et garde ses réglages de risque.
+ */
+export const REMOVED_KINDS: Record<string, BotKind> = {
+  ema: "sma",
+  bollinger: "meanrev",
+  williams: "stoch",
+  ha: "engulf",
+  obv: "volume",
+  psar: "supertrend",
+  mfi: "rsi",
+};
+
+const SIGNAL_KEYS = ["fast", "slow", "bbPeriod", "bbMult", "wrPeriod", "oversold", "overbought", "psarAf", "psarMax", "rsiPeriod"] as const;
+
+/** Convertit un bot dont le type a été retiré (ou est inconnu) ; renvoie le bot inchangé sinon. */
+export function migrateRemovedKind<T extends { kind: string; status: string; params: BotParams; lastNote?: string }>(bot: T): T {
+  if (BOT_KIND_BY_ID[bot.kind as BotKind]) return bot;
+  const to = REMOVED_KINDS[bot.kind] ?? "rsi";
+  const params: BotParams = { ...bot.params };
+  for (const k of SIGNAL_KEYS) delete params[k];
+  return {
+    ...bot,
+    kind: to,
+    status: bot.status === "running" ? "paused" : bot.status,
+    params: { ...params, ...baseParams(to, 100) },
+    lastNote: `Stratégie « ${bot.kind} » retirée — convertie en ${kindTitle(to)}, à vérifier avant relance.`,
+  };
+}

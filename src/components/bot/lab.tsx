@@ -63,7 +63,7 @@ export function Lab() {
         return;
       }
       const stressed = applyStressScenario(hist.candles, id);
-      const kinds = ["rsi", "ema", "confirm", "mtf", "bollinger"] as const;
+      const kinds = ["rsi", "sma", "confirm", "mtf", "meanrev"] as const;
       const out: { id: StressScenarioId; label: string; pnlPct: number; sharpe: number; maxDd: number }[] = [];
       for (const kind of kinds) {
         const params = defaultParams(kind, stressed[stressed.length - 1]?.close ?? 100);

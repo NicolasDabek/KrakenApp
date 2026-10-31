@@ -25,8 +25,8 @@ export const Route = createFileRoute("/bot")({ component: BotPage });
 
 const KIND_GROUPS: { title: string; ids: BotKind[] }[] = [
   { title: "Accumulation", ids: ["grid", "dca"] },
-  { title: "Reversion", ids: ["rsi", "bollinger", "stoch", "vwap", "cci", "meanrev", "keltner", "williams", "mfi", "div", "mtf"] },
-  { title: "Tendance", ids: ["ema", "sma", "macd", "breakout", "supertrend", "adx", "roc", "ichimoku", "psar", "ha", "obv", "confirm"] },
+  { title: "Reversion", ids: ["rsi", "stoch", "vwap", "cci", "meanrev", "keltner", "div", "mtf"] },
+  { title: "Tendance", ids: ["sma", "macd", "breakout", "supertrend", "adx", "roc", "ichimoku", "confirm"] },
   { title: "Court terme", ids: ["scalp", "volume", "engulf"] },
 ];
 

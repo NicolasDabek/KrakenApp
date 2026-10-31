@@ -56,7 +56,7 @@ function makeBot(kind: Bot["kind"], extra: Partial<Bot> = {}): Bot {
 
 describe("Bot transfers", () => {
   it("registers mtf in the catalog", () => {
-    assert.equal(BOT_KINDS.length, 28);
+    assert.equal(BOT_KINDS.length, 21);
     assert.equal(kindTitle("mtf"), "Multi-TF RSI");
   });
 

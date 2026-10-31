@@ -12,6 +12,8 @@ export {
   BOOK_KINDS,
   untunedParams,
   TUNED_DEFAULTS,
+  REMOVED_KINDS,
+  migrateRemovedKind,
   profitDefaults,
   riskPresetFor,
   defaultSize,

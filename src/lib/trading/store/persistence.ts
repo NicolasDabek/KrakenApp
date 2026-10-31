@@ -1,5 +1,5 @@
 import type { Bot } from "../types";
-import { DEFAULT_PAPER } from "../bots.ts";
+import { DEFAULT_PAPER, migrateRemovedKind } from "../bots.ts";
 import { toEurPair } from "../pairs.ts";
 import { createJSONStorage, type PersistOptions } from "zustand/middleware";
 import type { TradingState } from "./state.ts";
@@ -67,7 +67,7 @@ export const tradingPersistOptions: PersistOptions<TradingState, PersistedDesk> 
         const pair = toEurPair(b.pair);
         const pauseLive = b.venue === "live" && b.status === "running" && !state.settings.resumeLive;
         const next: Bot = {
-          ...b,
+          ...migrateRemovedKind(b),
           pair,
           status: pauseLive ? "paused" : b.status,
           lastNote: pauseLive ? "Pause après rechargement — relance pour trader réel." : b.lastNote,

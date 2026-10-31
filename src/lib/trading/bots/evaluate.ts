@@ -5,24 +5,18 @@ import { BOOK_KINDS, MEAN_REVERSION } from "./catalog.ts";
 import { dropFormingCandle, markFlat, px, remainingQuoteBudget, roundSmart, tradingDay } from "./common.ts";
 import type { BotEvalCtx, BotFill } from "./common.ts";
 import { evalAdx } from "./strategies/adx.ts";
-import { evalBb } from "./strategies/bollinger.ts";
 import { evalBreakout } from "./strategies/breakout.ts";
 import { evalCci } from "./strategies/cci.ts";
 import { evalConfirm } from "./strategies/confirm.ts";
 import { evalDca } from "./strategies/dca.ts";
 import { evalDiv } from "./strategies/div.ts";
-import { evalEma } from "./strategies/ema.ts";
 import { evalEngulf } from "./strategies/engulf.ts";
 import { evalGrid, flattenGrid, syncGridPosition } from "./strategies/grid.ts";
-import { evalHa } from "./strategies/ha.ts";
 import { evalIchimoku } from "./strategies/ichimoku.ts";
 import { evalKeltner } from "./strategies/keltner.ts";
 import { evalMacd } from "./strategies/macd.ts";
 import { evalMeanRev } from "./strategies/meanrev.ts";
-import { evalMfi } from "./strategies/mfi.ts";
 import { evalMtf } from "./strategies/mtf.ts";
-import { evalObv } from "./strategies/obv.ts";
-import { evalPsar } from "./strategies/psar.ts";
 import { evalRoc } from "./strategies/roc.ts";
 import { evalRsi } from "./strategies/rsi.ts";
 import { evalScalp } from "./strategies/scalp.ts";
@@ -31,7 +25,6 @@ import { evalStoch } from "./strategies/stoch.ts";
 import { evalSupertrend } from "./strategies/supertrend.ts";
 import { evalVolume } from "./strategies/volume.ts";
 import { evalVwap } from "./strategies/vwap.ts";
-import { evalWilliams } from "./strategies/williams.ts";
 
 export type DeskLimits = {
   deskDailyLoss?: number;
@@ -105,10 +98,6 @@ function evaluateRaw(bot: Bot, ctx: BotEvalCtx): { fills: BotFill[]; runtime: Bo
       return evalDca(bot, ctx);
     case "rsi":
       return evalRsi(bot, ctx);
-    case "ema":
-      return evalEma(bot, ctx);
-    case "bollinger":
-      return evalBb(bot, ctx);
     case "macd":
       return evalMacd(bot, ctx);
     case "stoch":
@@ -133,28 +122,21 @@ function evaluateRaw(bot: Bot, ctx: BotEvalCtx): { fills: BotFill[]; runtime: Bo
       return evalRoc(bot, ctx);
     case "adx":
       return evalAdx(bot, ctx);
-    case "williams":
-      return evalWilliams(bot, ctx);
     case "ichimoku":
       return evalIchimoku(bot, ctx);
-    case "psar":
-      return evalPsar(bot, ctx);
     case "sma":
       return evalSma(bot, ctx);
-    case "ha":
-      return evalHa(bot, ctx);
-    case "mfi":
-      return evalMfi(bot, ctx);
     case "engulf":
       return evalEngulf(bot, ctx);
-    case "obv":
-      return evalObv(bot, ctx);
     case "div":
       return evalDiv(bot, ctx);
     case "confirm":
       return evalConfirm(bot, ctx);
     case "mtf":
       return evalMtf(bot, ctx);
+    default:
+      // Type retiré ou inconnu (ancienne sauvegarde) : aucun ordre, jamais de plantage.
+      return { fills: [], runtime: { ...bot.runtime }, note: "Stratégie inconnue — bot à reconfigurer." };
   }
 }
 

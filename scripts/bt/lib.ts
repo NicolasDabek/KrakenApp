@@ -20,7 +20,7 @@ const cache = new Map<string, Candle[]>();
 export function load(id: string): Candle[] {
   let c = cache.get(id);
   if (!c) {
-    const f = new URL(`./.data/${id}.json`, import.meta.url);
+    const f = new URL(`./${process.env.BT_DATA ?? ".data"}/${id}.json`, import.meta.url);
     if (!existsSync(f)) throw new Error(`missing ${id}: run node scripts/bt/fetch-data.mjs`);
     c = JSON.parse(readFileSync(f, "utf8")) as Candle[];
     cache.set(id, c);

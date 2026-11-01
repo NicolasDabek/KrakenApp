@@ -13,6 +13,16 @@ Télécharge des bougies publiques (API publique Binance, sans clé) : 8 paires,
 et 15 min sur 90 jours, date de fin fixe pour que les résultats soient reproductibles.
 Les fichiers vont dans `scripts/bt/.data/` (ignoré par git, ne pas commiter).
 
+### Autre fenêtre (ex. marché haussier)
+
+```bash
+BT_END=2024-03-14 BT_DATA=.data-bull node scripts/bt/fetch-data.mjs
+BT_DATA=.data-bull node --experimental-strip-types scripts/bt/rank.ts   # → results/rank-bull.md
+```
+
+Fenêtre haussière de référence : 1 h du 15/03/2023 au 14/03/2024 (BTC +195 %, SOL +704 %),
+15 min du 15/12/2023 au 14/03/2024 (BTC +70 %).
+
 ## 2. Lancer le réglage
 
 ```bash

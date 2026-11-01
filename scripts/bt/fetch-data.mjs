@@ -1,13 +1,14 @@
 // Downloads public OHLCV history (Binance spot klines, no key) into scripts/bt/.data/
 // Usage: node scripts/bt/fetch-data.mjs   (Node 22)
+// Autre fenêtre : BT_END=2024-03-14 BT_DATA=.data-bull node scripts/bt/fetch-data.mjs
 import { mkdirSync, writeFileSync } from "node:fs";
-const OUT = new URL("./.data/", import.meta.url);
+const OUT = new URL(`./${process.env.BT_DATA ?? ".data"}/`, import.meta.url);
 mkdirSync(OUT, { recursive: true });
 export const PAIRS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT", "DOGEUSDT", "LINKUSDT", "AVAXUSDT"];
 export const SETS = [{ iv: 60, days: 365 }, { iv: 15, days: 90 }];
 const step = { 15: "15m", 60: "1h" };
 for (const { iv, days } of SETS) for (const p of PAIRS) {
-  const end = Date.UTC(2026, 9, 28); // fixed end date → reproducible dataset
+  const end = process.env.BT_END ? Date.parse(`${process.env.BT_END}T00:00:00Z`) : Date.UTC(2026, 9, 28); // fixed end date → reproducible dataset
   let t = end - days * 86400e3;
   const rows = [];
   while (t < end) {

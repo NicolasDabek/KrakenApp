@@ -370,16 +370,21 @@ function applyRisk(
     }
   }
 
+  // Barre d'entrée : le plus haut/bas de la bougie a eu lieu AVANT l'achat (à la clôture).
+  // Les utiliser créerait des sorties fictives (stop touché ou pic gonflé) — on prend le dernier prix.
+  const enteredNow = Boolean(keptBuy && !prev.inPosition);
+  const riskLow = enteredNow ? last : low;
+  const riskHigh = enteredNow ? last : high;
   if (runtime.inPosition && runtime.positionQty && runtime.positionAvg) {
-    runtime.peakPrice = Math.max(runtime.peakPrice ?? runtime.positionAvg, high);
+    runtime.peakPrice = Math.max(runtime.peakPrice ?? runtime.positionAvg, riskHigh);
   } else if (!runtime.inPosition) {
     runtime.peakPrice = undefined;
   }
 
   if (runtime.inPosition && runtime.positionQty && runtime.positionAvg && !fills.some((f) => f.side === "sell")) {
     const avg = runtime.positionAvg;
-    const pctLow = ((low - avg) / avg) * 100;
-    const pctHigh = ((high - avg) / avg) * 100;
+    const pctLow = ((riskLow - avg) / avg) * 100;
+    const pctHigh = ((riskHigh - avg) / avg) * 100;
     const sl = bot.params.slPct;
     const rawTp = bot.params.tpPct ?? 0;
     const feePct = ((ctx.feeRate ?? 0) * 2 + (rawTp > 0 ? 0.001 : 0)) * 100;
@@ -395,9 +400,12 @@ function applyRisk(
     if (slAtr > 0 && ctx.candles && ctx.candles.length > 16) {
       const a = atr(ctx.candles, 14);
       const av = a[a.length - 1];
-      if (av != null && low <= avg - slAtr * av) atrStop = true;
+      if (av != null && riskLow <= avg - slAtr * av) atrStop = true;
     }
     const sellPx = (limit: number) => (ctx.barLow != null || ctx.barHigh != null ? limit : px(ctx, "sell"));
+    // Ordre stop en backtest : si la bougie ouvre déjà sous le niveau (gap), on sort à l'ouverture, pas au niveau.
+    const open = ctx.ticker.open;
+    const stopPx = (level: number) => sellPx(ctx.barLow != null && open > 0 ? Math.min(level, open) : level);
     const closeAll = (price: number, why: string) => {
       fills.push({ side: "sell", qty: runtime.positionQty!, price, note: why });
       flattenGrid(runtime);
@@ -409,13 +417,13 @@ function applyRisk(
     const peakGain = ((peak - avg) / avg) * 100;
     const lockPx = avg * (1 + (ctx.feeRate ?? 0) * 2);
     if (sl && sl > 0 && pctLow <= -sl && !perLot) {
-      closeAll(sellPx(avg * (1 - sl / 100)), `Stop-loss ${pctLow.toFixed(2)} %`);
-    } else if (!justEntered && be > 0 && peakGain >= be && low <= lockPx && bot.kind !== "grid") {
-      closeAll(sellPx(lockPx), `Gain verrouillé après +${be} %`);
+      closeAll(stopPx(avg * (1 - sl / 100)), `Stop-loss ${pctLow.toFixed(2)} %`);
+    } else if (!justEntered && be > 0 && peakGain >= be && riskLow <= lockPx && bot.kind !== "grid") {
+      closeAll(stopPx(lockPx), `Gain verrouillé après +${be} %`);
     } else if (atrStop && bot.kind !== "grid") {
       const a = atr(ctx.candles!, 14);
       const av = a[a.length - 1] ?? 0;
-      closeAll(sellPx(avg - slAtr * av), `Stop ATR ×${slAtr}`);
+      closeAll(stopPx(avg - slAtr * av), `Stop ATR ×${slAtr}`);
     } else if (tp && tp > 0 && pctHigh >= tp && bot.kind !== "grid") {
       const tpPx = sellPx(avg * (1 + tp / 100));
       if (partial > 0 && partial < 100 && !runtime.scaledOut) {
@@ -440,9 +448,9 @@ function applyRisk(
       !justEntered &&
       bot.kind !== "grid" &&
       peakGain >= Math.max(trail, ((ctx.feeRate ?? 0) * 2 + 0.001) * 100) &&
-      low <= peak * (1 - trail / 100)
+      riskLow <= peak * (1 - trail / 100)
     ) {
-      closeAll(sellPx(peak * (1 - trail / 100)), `Trailing ${trail} % depuis ${roundSmart(peak)}`);
+      closeAll(stopPx(peak * (1 - trail / 100)), `Trailing ${trail} % depuis ${roundSmart(peak)}`);
     } else if (holdMin > 0 && bot.kind !== "grid" && runtime.entryAt && now - runtime.entryAt >= holdMin * 60_000) {
       closeAll(px(ctx, "sell"), `Sortie temps ${holdMin} min`);
     }

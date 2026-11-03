@@ -1,3 +1,4 @@
+import { tradingDay } from "./bots/common.ts";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -403,7 +404,7 @@ describe("evaluateBot — RSI + risk overlay", () => {
     const day = evaluateBot(
       makeBot("dca", {
         params: { intervalMs: 1, maxDailyLoss: 50 },
-        runtime: { dayStamp: new Date(now).toISOString().slice(0, 10), dayPnl: -80 },
+        runtime: { dayStamp: tradingDay(now), dayPnl: -80 },
       }),
       { now, ticker: ticker(100) },
     );
@@ -466,6 +467,33 @@ describe("evaluateBot — RSI + risk overlay", () => {
     assert.equal(res.fills[0]?.side, "sell");
     assert.match(res.fills[0]!.note, /Stop-loss/);
     assert.ok(res.fills[0]!.price <= 98.01);
+  });
+
+  it("fills a gapped stop-loss at the bar open, not at the stop level", () => {
+    const bot = makeBot("dca", {
+      params: { intervalMs: 300_000, slPct: 2 },
+      runtime: { inPosition: true, positionQty: 1, positionAvg: 100, nextDcaAt: 9e12, entryAt: 1 },
+    });
+    const res = evaluateBot(bot, { now: 50, ticker: ticker(95, { open: 94 }), barLow: 93, barHigh: 96 });
+    assert.match(res.fills[0]!.note, /Stop-loss/);
+    assert.equal(res.fills[0]!.price, 94);
+  });
+
+  it("does not stop out on the entry bar's pre-entry low", () => {
+    const body: Candle[] = candlesFrom([100, 101, 102, 103, 104]);
+    const t0 = body[body.length - 1]!.time;
+    body.push({ time: t0 + 900, open: 105, high: 105.2, low: 94.8, close: 95, volume: 20 });
+    body.push({ time: t0 + 1800, open: 94, high: 112, low: 80, close: 106.5, volume: 20 });
+    const res = evaluateBot(makeBot("engulf", { params: { ...makeBot("engulf").params, slPct: 2, tpPct: 3 } }), {
+      now: 3,
+      ticker: ticker(106.5),
+      candles: body,
+      barLow: 80,
+      barHigh: 112,
+    });
+    assert.deepEqual(res.fills.map((f) => f.side), ["buy"]);
+    assert.equal(res.runtime.inPosition, true);
+    assert.ok((res.runtime.peakPrice ?? 0) < 108);
   });
 
   it("blocks entries outside the UTC session and times out a stale long", () => {
@@ -610,6 +638,21 @@ describe("backtest / optimizer / preview", () => {
     assert.equal(backtestWarmup("sma", { slow: 200 }), 208);
     assert.equal(backtestWarmup("rsi", {}), 48);
     assert.ok(backtestWarmup("ichimoku", { kijun: 26 }) > 50);
+  });
+
+  it("measures drawdown % against the peak at the time, not the final peak", () => {
+    const px = [
+      ...Array.from({ length: 40 }, () => 100),
+      ...Array.from({ length: 10 }, (_, i) => 110 + i * 10),
+      150, 150, 150,
+      ...Array.from({ length: 10 }, (_, i) => 200 + i * 25),
+    ];
+    const r = backtestBot("dca", { intervalMs: 9e15 }, 9_000, candlesFrom(px), 0, "XBTEUR", {
+      startingBalance: 10_000,
+      warmup: 30,
+    });
+    assert.ok(r);
+    assert.ok(r!.maxDrawdownPct > 20, `dd ${r!.maxDrawdownPct}`);
   });
 
   it("runs a DCA backtest that spends fees and tracks equity", () => {
@@ -824,7 +867,7 @@ describe("evaluateBot — remaining strategies", () => {
     const quota = evaluateBot(
       makeBot("dca", {
         params: { intervalMs: 1, maxTradesDay: 2 },
-        runtime: { dayStamp: new Date(1_000).toISOString().slice(0, 10), dayTrades: 2 },
+        runtime: { dayStamp: tradingDay(1_000), dayTrades: 2 },
       }),
       { now: 1_000, ticker: ticker(100) },
     );
@@ -1190,7 +1233,7 @@ describe("evaluateBot — remaining strategies", () => {
 
 describe("paper averaging / partial sell / optimizer extras", () => {
   it("averages a second buy and sells a fraction", () => {
-    let paper = resetPaperAccount(30_000, 0.0026);
+    const paper = resetPaperAccount(30_000, 0.0026);
     const first = applyPaperFill(paper, {
       botId: "b",
       pair: "XBTEUR",

@@ -88,6 +88,10 @@ export function backtestBot(
   let paper = resetPaperAccount(startEquity, feeRate);
   const curve: { t: number; v: number }[] = [{ t: candles[warmup]!.time * 1000, v: startEquity }];
   let barsInPos = 0;
+  // Drawdown suivi à chaque bougie (la courbe n'est qu'échantillonnée) et en % du pic du moment.
+  let ddPeak = startEquity;
+  let ddMax = 0;
+  let ddMaxPct = 0;
   const firstPx = candles[warmup]!.close;
 
   for (let i = warmup; i < candles.length; i++) {
@@ -143,8 +147,11 @@ export function backtestBot(
         }
       }
     }
+    const mark = paper.cash + Object.values(paper.holdings).reduce((s, h) => s + h.qty * c.close, 0);
+    ddPeak = Math.max(ddPeak, mark);
+    ddMax = Math.max(ddMax, ddPeak - mark);
+    if (ddPeak > 0) ddMaxPct = Math.max(ddMaxPct, ((ddPeak - mark) / ddPeak) * 100);
     if (i === candles.length - 1 || i % 3 === 0 || fills.length) {
-      const mark = paper.cash + Object.values(paper.holdings).reduce((s, h) => s + h.qty * c.close, 0);
       curve.push({ t: c.time * 1000, v: mark });
     }
   }
@@ -156,12 +163,7 @@ export function backtestBot(
   const lossList = sells.filter((t) => t.pnl <= 0);
   const grossWin = winsList.reduce((s, t) => s + t.pnl, 0);
   const grossLoss = Math.abs(lossList.reduce((s, t) => s + t.pnl, 0));
-  let peak = startEquity;
-  let maxDd = 0;
-  for (const p of curve) {
-    peak = Math.max(peak, p.v);
-    maxDd = Math.max(maxDd, peak - p.v);
-  }
+  const maxDd = ddMax;
   const qtyBh = startEquity / firstPx;
   const buyHold = qtyBh * last - startEquity;
   const tested = candles.length - warmup;
@@ -191,7 +193,7 @@ export function backtestBot(
     equity: eq,
     startEquity,
     maxDrawdown: maxDd,
-    maxDrawdownPct: peak > 0 ? (maxDd / peak) * 100 : 0,
+    maxDrawdownPct: ddMaxPct,
     profitFactor: grossLoss > 0 ? grossWin / grossLoss : grossWin > 0 ? 99 : 0,
     avgWin: winsList.length ? grossWin / winsList.length : 0,
     avgLoss: lossList.length ? -(grossLoss / lossList.length) : 0,

@@ -65,6 +65,11 @@ export function tradingDay(ms: number): string {
   return PARIS_DAY.format(ms);
 }
 
+/** PnL du jour affichable : 0 si le compteur date d'un jour précédent (bot en pause depuis). */
+export function currentDayPnl(runtime: { dayStamp?: string; dayPnl?: number }, now: number): number {
+  return runtime.dayStamp === tradingDay(now) ? (runtime.dayPnl ?? 0) : 0;
+}
+
 export function roundSmart(n: number): number {
   if (!(n > 0)) return 0;
   if (n >= 1000) return Math.round(n);

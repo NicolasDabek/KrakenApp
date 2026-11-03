@@ -970,6 +970,26 @@ describe("desk circuit breaker", () => {
     assert.equal(after.status, "paused");
     assert.match(after.lastNote, /bureau|jour/i);
   });
+
+  it("ignores yesterday's loss of a paused bot in the desk daily stop", () => {
+    seedTickers([ticker("XBTEUR", 90_000)]);
+    const mk = () =>
+      useTradingStore.getState().createBot({ kind: "dca", venue: "paper", pair: "XBTEUR", interval: 15, sizeQuote: 50, params: { intervalMs: 60_000 } });
+    const stale = mk();
+    const live = mk();
+    useTradingStore.setState({
+      settings: { ...useTradingStore.getState().settings, deskDailyLoss: 40 },
+      bots: useTradingStore.getState().bots.map((b) =>
+        b.id === stale.id
+          ? { ...b, status: "paused" as const, runtime: { dayPnl: -80, dayStamp: tradingDay(Date.now() - 2 * 86_400_000) } }
+          : b.id === live.id
+            ? { ...b, status: "running" as const }
+            : b,
+      ),
+    });
+    useTradingStore.getState().runBots();
+    assert.equal(useTradingStore.getState().bots.find((b) => b.id === live.id)!.status, "running");
+  });
 });
 
 

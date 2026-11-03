@@ -1,4 +1,5 @@
 import { Percent, ShieldAlert, Square } from "lucide-react";
+import { currentDayPnl } from "@/lib/trading/bots/common";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +26,7 @@ export function Cockpit({ venue }: { venue: BotVenue }) {
   const [confirmPanic, setConfirmPanic] = useState(false);
   const mine = bots.filter((b) => b.venue === venue);
   const running = mine.filter((b) => b.status === "running");
-  const day = mine.reduce((s, b) => s + (b.runtime.dayPnl ?? 0), 0);
+  const day = mine.reduce((s, b) => s + currentDayPnl(b.runtime, Date.now()), 0);
   const pnl = mine.reduce((s, b) => s + b.stats.realizedPnl, 0);
   const stale = lastTickAt > 0 && Date.now() - lastTickAt > 18_000;
   const marks = mine.map((b) => botMark(b.runtime, tickers[b.pair]?.last ?? 0));

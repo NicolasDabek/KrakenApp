@@ -1,3 +1,4 @@
+import { currentDayPnl } from "../bots/common.ts";
 import { toast } from "sonner";
 import { allocateByPerformance, applyPaperFill, botAllocScore, botMark, dropFormingCandle, evaluateBot, evaluateDesk, gatedOptimizeBot, kindNeedsCandles, mtfIntervalsOf, paperEquity, snapshotEquity } from "../bots.ts";
 import { PAIR_BY_ID, toEurPair } from "../pairs.ts";
@@ -146,7 +147,8 @@ export const createEngineActions = (set: StoreSet, get: StoreGet): Pick<TradingS
       if (paperPeak !== get().deskPeakPaper || livePeak !== get().deskPeakLive) {
         set({ deskPeakPaper: paperPeak, deskPeakLive: livePeak });
       }
-      const paperDay = allBots.filter((b) => b.venue === "paper").reduce((s, b) => s + (b.runtime.dayPnl ?? 0), 0);
+      // Jour de Paris courant uniquement : un bot en pause garde le dayPnl d'hier, qui relançait le stop bureau chaque jour.
+      const paperDay = allBots.filter((b) => b.venue === "paper").reduce((s, b) => s + currentDayPnl(b.runtime, now), 0);
       const paperExposure = running
         .filter((b) => b.venue === "paper")
         .reduce((s, b) => {
@@ -165,7 +167,7 @@ export const createEngineActions = (set: StoreSet, get: StoreGet): Pick<TradingS
         pingFill(settings, "Nautilus", paperDesk.note ?? "Stop bureau");
         return;
       }
-      const liveDay = allBots.filter((b) => b.venue === "live").reduce((s, b) => s + (b.runtime.dayPnl ?? 0), 0);
+      const liveDay = allBots.filter((b) => b.venue === "live").reduce((s, b) => s + currentDayPnl(b.runtime, now), 0);
       const liveExposure = running
         .filter((b) => b.venue === "live")
         .reduce((s, b) => {

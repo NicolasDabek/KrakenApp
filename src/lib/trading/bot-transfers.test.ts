@@ -178,3 +178,12 @@ describe("botAllocScore", () => {
     assert.equal(botAllocScore(bot), 50);
   });
 });
+
+describe("currentDayPnl", async () => {
+  const { currentDayPnl, tradingDay } = await import("./bots/common.ts");
+  it("affiche 0 quand le compteur date d'hier", () => {
+    const now = Date.UTC(2026, 10, 3, 12);
+    assert.equal(currentDayPnl({ dayStamp: tradingDay(now), dayPnl: -12 }, now), -12);
+    assert.equal(currentDayPnl({ dayStamp: tradingDay(now - 86_400_000), dayPnl: -12 }, now), 0);
+  });
+});

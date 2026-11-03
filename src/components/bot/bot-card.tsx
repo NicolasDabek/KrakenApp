@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { botDeployed, botInventoryQty, botMark, BOT_KIND_BY_ID, botWinRate, gridFeePadPct, kindNeedsCandles, profitDefaults } from "@/lib/trading/bots";
+import { currentDayPnl } from "@/lib/trading/bots/common";
 import { formatDateTime, formatFiat, formatQty } from "@/lib/trading/format";
 import { trendQuality } from "@/lib/trading/indicators";
 import { bookHint, scoreBook } from "@/lib/trading/book-score";
@@ -42,6 +43,7 @@ export function BotCard({ bot }: { bot: Bot }) {
   const winRate = botWinRate(bot.stats);
   const mark = botMark(bot.runtime, ticker?.last ?? 0);
   const uPnl = mark.unrealized;
+  const dayPnl = currentDayPnl(bot.runtime, Date.now());
   const sparkPts = useMemo(() => {
     const rows = (bot.venue === "paper" ? paperTrades : liveFills).filter((t) => t.botId === bot.id);
     const pts: number[] = [0];
@@ -101,7 +103,7 @@ export function BotCard({ bot }: { bot: Bot }) {
         <Stat label="Trades" value={String(bot.stats.trades)} />
         <Stat label="Frais" value={formatFiat(bot.stats.feesPaid, "EUR")} />
         <Stat
-          label="PnL"
+          label="PnL réalisé"
           value={formatFiat(bot.stats.realizedPnl, "EUR")}
           tone={bot.stats.realizedPnl >= 0 ? "buy" : "sell"}
         />
@@ -113,7 +115,7 @@ export function BotCard({ bot }: { bot: Bot }) {
           value={formatFiat(uPnl, "EUR")}
           tone={uPnl > 0 ? "buy" : uPnl < 0 ? "sell" : undefined}
         />
-        <Stat label="Jour" value={formatFiat(bot.runtime.dayPnl ?? 0, "EUR")} tone={(bot.runtime.dayPnl ?? 0) >= 0 ? "buy" : "sell"} />
+        <Stat label="Jour" value={formatFiat(dayPnl, "EUR")} tone={dayPnl >= 0 ? "buy" : "sell"} />
       </div>
       {bot.venue === "live" && !connection.apiKey && (
         <p className="mt-2 text-xs text-warning">Clés Kraken requises pour lancer.</p>

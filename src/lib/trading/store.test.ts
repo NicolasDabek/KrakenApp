@@ -528,6 +528,22 @@ describe("demo extras — shorts, stops, hydrate, convert errors", () => {
     assert.equal(s.convert("EUR", "BTC", 0).ok, false);
   });
 
+  it("values a paper bot's manual close at its own entry, not the shared paper average", () => {
+    seedTickers([ticker("XBTEUR", 100_000)]);
+    const bot = useTradingStore.getState().createBot({
+      kind: "rsi", venue: "paper", pair: "XBTEUR", interval: 15, sizeQuote: 50, params: {},
+    });
+    useTradingStore.setState({
+      paper: { ...DEFAULT_PAPER, feeRate: 0, cash: 0, holdings: { BTC: { qty: 2, avg: 50_000 } }, trades: [], equityCurve: [] },
+      bots: useTradingStore.getState().bots.map((b) =>
+        b.id === bot.id ? { ...b, runtime: { inPosition: true, positionQty: 1, positionAvg: 90_000 } } : b,
+      ),
+    });
+    useTradingStore.getState().flattenBot(bot.id);
+    const after = useTradingStore.getState().bots.find((b) => b.id === bot.id)!;
+    assert.ok(Math.abs(after.stats.realizedPnl - 9_950) < 1, `pnl ${after.stats.realizedPnl} ${after.lastNote}`);
+  });
+
   it("pauses a paper bot on a daily-loss stop and clamps paper fees", () => {
     seedTickers([ticker("XBTEUR", 90_000)]);
     const bot = useTradingStore.getState().createBot({

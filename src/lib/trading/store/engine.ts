@@ -397,7 +397,9 @@ export const createEngineActions = (set: StoreSet, get: StoreGet): Pick<TradingS
             qty: fill.qty,
             price: fill.price,
             note: fill.note,
-            costBasis: fill.entry,
+            // Le compte papier mélange tous les bots d'un même actif : on valorise la sortie au prix
+            // d'entrée du bot (comme en live), pas à la moyenne commune.
+            costBasis: fill.entry && fill.entry > 0 ? fill.entry : fill.side === "sell" ? bot.runtime.positionAvg : undefined,
           });
           if (!res.ok) {
             next = { ...next, lastNote: res.message };

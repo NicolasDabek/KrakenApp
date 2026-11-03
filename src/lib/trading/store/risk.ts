@@ -71,6 +71,7 @@ export const createRiskActions = (set: StoreSet, get: StoreGet): Pick<TradingSta
         qty,
         price,
         note: "Clôture manuelle",
+        costBasis: bot.runtime.positionAvg && bot.runtime.positionAvg > 0 ? bot.runtime.positionAvg : undefined,
       });
       if (!res.ok) {
         toast.message(res.message);

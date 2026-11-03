@@ -38,8 +38,10 @@ export const createTickActions = (set: StoreSet, get: StoreGet): Pick<TradingSta
         }
         if (!hit) continue;
         const { base, quote } = pairAssets(order.pair);
-        const px = order.price ?? last;
-        const fee = order.amount * px * settings.makerFee;
+        // Stop simple = ordre marché au déclenchement : exécuté au dernier prix (gap compris), pas au niveau saisi.
+        const px = order.type === "stop" ? last : (order.price ?? last);
+        // Un stop déclenché part au marché : frais taker. Seule la limite simple est maker.
+        const fee = order.amount * px * (order.type === "limit" ? settings.makerFee : settings.takerFee);
         order.status = "filled";
         order.filled = order.amount;
         order.avgPrice = px;

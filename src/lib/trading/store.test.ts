@@ -214,7 +214,10 @@ describe("demo orders", () => {
     assert.equal(placed.order?.status, "open");
     useTradingStore.setState({ tickers: { XBTEUR: ticker("XBTEUR", 96_000) } });
     s.processTick();
-    assert.equal(useTradingStore.getState().orders.find((o) => o.id === placed.order!.id)?.status, "filled");
+    const done = useTradingStore.getState().orders.find((o) => o.id === placed.order!.id)!;
+    assert.equal(done.status, "filled");
+    assert.equal(done.avgPrice, 96_000);
+    assert.ok(Math.abs(done.fee! - 0.01 * 96_000 * useTradingStore.getState().settings.takerFee) < 1e-9);
   });
 
   it("opens a leveraged position then closes it for PnL", () => {

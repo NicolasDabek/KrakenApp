@@ -61,7 +61,7 @@ export function reportToText(report: FiscalReport, id: FiscalIdentity): string {
       `${report.indicative ? "Estimation indicative" : "PFU"} ${report.tax.label} : IR ${eur(report.tax.ir)} + PS ${eur(report.tax.ps)} = ${eur(report.tax.total)} EUR`,
     );
   } else if (report.net < 0 && !report.exempt) {
-    lines.push("Moins-value nette : reportable sur les plus-values des 10 années suivantes (case 3BN si année civile).");
+    lines.push("Moins-value nette : case 3BN si année civile ; non reportable sur les années suivantes (art. 150 VH bis IV).");
   }
   if (report.yearCessions.length) {
     lines.push("");
@@ -601,9 +601,9 @@ export function reportToPdf(report: FiscalReport, id: FiscalIdentity): Uint8Arra
         : report.tax
           ? `${report.indicative ? "Estimation indicative. " : ""}PFU ${report.tax.label} : ${eur(report.tax.total)} EUR (IR ${eur(report.tax.ir)} + PS ${eur(report.tax.ps)}).`
           : report.declaration?.reportBox === "3BN"
-            ? `Moins-value nette reportable, case 3BN : ${report.declaration.reportEuros} EUR.`
+            ? `Moins-value nette (non reportable), case 3BN : ${report.declaration.reportEuros} EUR.`
             : report.net < 0
-              ? "Moins-value nette, reportable 10 ans."
+              ? "Moins-value nette, non reportable sur les annees suivantes."
               : "Pas d'impot estime.",
       font: "F1",
       size: 10,

@@ -62,35 +62,18 @@ function buildYearSheets(rows: CessionRow[]): YearSheet[] {
   }
   const years = [...by.keys()].sort((a, b) => a - b);
   if (!years.length) return [];
-  const lots: { year: number; left: number }[] = [];
+  // CGI 150 VH bis IV / BOFiP RPPM-PVBMC-30-20 §170 : une moins-value nette d'actifs numériques
+  // ne s'impute que sur l'année même ; elle ne se reporte PAS sur les années suivantes (≠ valeurs mobilières).
   const sheets: YearSheet[] = [];
   for (let year = years[0]!; year <= years[years.length - 1]!; year++) {
-    for (const lot of lots) {
-      if (year - lot.year > 10) lot.left = 0;
-    }
     const cur = by.get(year);
     if (!cur) continue;
     const cessionsNet = cents(cur.net);
     const gain = cents(cur.gain);
     const exempt = cessionsNet <= CESSION_EXEMPT_EUR;
-    let imputed = 0;
-    let taxable = 0;
-    let lossCreated = 0;
-    if (!exempt && gain > 0) {
-      let left = gain;
-      for (const lot of lots) {
-        if (!(lot.left > 0) || year - lot.year > 10 || year <= lot.year) continue;
-        const take = Math.min(lot.left, left);
-        lot.left = cents(lot.left - take);
-        left = cents(left - take);
-        imputed = cents(imputed + take);
-        if (!(left > 0)) break;
-      }
-      taxable = left;
-    } else if (!exempt && gain < 0) {
-      lossCreated = cents(-gain);
-      lots.push({ year, left: lossCreated });
-    }
+    const imputed = 0;
+    const taxable = !exempt && gain > 0 ? gain : 0;
+    const lossCreated = !exempt && gain < 0 ? cents(-gain) : 0;
     const rates = pfuForYear(year);
     sheets.push({
       year,

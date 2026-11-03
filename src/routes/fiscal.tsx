@@ -542,7 +542,7 @@ function FiscalPage() {
               2042-C, case 3BN : {report.declaration.reportEuros.toLocaleString("fr-FR")} €
             </p>
           ) : (
-            <p className="mt-2 text-xs text-muted-foreground">Plus-value absorbée par les moins-values reportables. Rien à inscrire en 3AN.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Aucune plus-value nette imposable. Rien à inscrire en 3AN.</p>
           )}
           <p className="mt-2 text-xs text-subtle">
             L’option pour le barème de l’impôt sur le revenu se coche en case 3CN. Elle n’est pas chiffrée ici : elle dépend du reste des revenus.

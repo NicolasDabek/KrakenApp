@@ -147,7 +147,7 @@ describe("méthode 2086", () => {
     assert.equal(next.declaration?.reportEuros, 500);
   });
 
-  it("impute une moins-value des dix années précédentes et ignore une année exonérée", () => {
+  it("ne reporte pas une moins-value d'une année sur la suivante (150 VH bis IV) et ignore une année exonérée", () => {
     const lossYear = parisDate(2024, 3, 1);
     const tiny = parisDate(2023, 3, 1);
     const report = buildFiscalReport(
@@ -167,10 +167,10 @@ describe("méthode 2086", () => {
     assert.equal(y2023.exempt, true);
     assert.equal(y2023.lossCreated, 0);
     assert.equal(y2024.lossCreated, 200);
-    assert.equal(y2025.imputed, 200);
-    assert.equal(y2025.taxable, 300);
-    assert.equal(report.declaration?.reportEuros, 300);
-    assert.equal(report.tax?.total, 90);
+    assert.equal(y2025.imputed, 0);
+    assert.equal(y2025.taxable, 500);
+    assert.equal(report.declaration?.reportEuros, 500);
+    assert.equal(report.tax?.total, 150);
   });
 
   it("valorise l'autre actif au cours du jour et fige le stock en fin de période", () => {

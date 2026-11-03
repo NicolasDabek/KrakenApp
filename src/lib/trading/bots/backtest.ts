@@ -406,6 +406,11 @@ export type WalkForwardResult = {
   outSample: BacktestResult | null;
 };
 
+/** Index de coupure in-sample / out-of-sample (70 %). */
+export function walkForwardSplit(n: number): number {
+  return Math.max(40, Math.floor(n * 0.7));
+}
+
 export function walkForward(
   kind: BotKind,
   params: BotParams,
@@ -415,7 +420,7 @@ export function walkForward(
   pair: string,
   opts: BacktestOpts = {},
 ): WalkForwardResult {
-  const split = Math.max(40, Math.floor(candles.length * 0.7));
+  const split = walkForwardSplit(candles.length);
   const warmup = backtestWarmup(kind, params);
   const is = backtestBot(kind, params, sizeQuote, candles.slice(0, split), feeRate, pair, opts);
   const oosStart = Math.max(0, split - warmup);
@@ -485,7 +490,9 @@ export function gatedOptimizeBot(
   opts: BacktestOpts & { minOosSharpe?: number } = {},
 ): GatedOptResult {
   const minOos = opts.minOosSharpe ?? 0;
-  const ranked = optimizeBot(kind, base, sizeQuote, candles, feeRate, pair, opts);
+  // Sélection sur la partie in-sample uniquement : choisir sur tout l'historique puis « valider » sur
+  // ses 30 % finaux revenait à tester sur des données déjà vues (OOS non indépendant).
+  const ranked = optimizeBot(kind, base, sizeQuote, candles.slice(0, walkForwardSplit(candles.length)), feeRate, pair, opts);
   if (!ranked.length) return { ok: false, reason: "Aucune variante rentable sur l’échantillon." };
   const best = ranked[0]!;
   const wf = walkForward(kind, best.params, sizeQuote, candles, feeRate, pair, opts);

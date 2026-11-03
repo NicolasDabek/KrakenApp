@@ -156,3 +156,18 @@ describe("Bot transfers", () => {
     assert.equal(gated.ok, false);
   });
 });
+
+describe("gatedOptimizeBot — sélection sans regarder l'OOS", async () => {
+  const { optimizeBot, walkForwardSplit } = await import("./bots/backtest.ts");
+  it("choisit la variante sur la seule partie in-sample", () => {
+    const cs: Candle[] = Array.from({ length: 600 }, (_, i) => {
+      const c = 100 + Math.sin(i / 7) * 3 + (i > 420 ? Math.sin(i / 3) * 6 : 0);
+      return { time: 1_700_000_000 + i * 900, open: c, high: c * 1.004, low: c * 0.996, close: c, volume: 1 };
+    });
+    const base = defaultParams("rsi", 100);
+    const gated = gatedOptimizeBot("rsi", base, 200, cs, 0.0026, "XBTEUR", { interval: 15 });
+    const isBest = optimizeBot("rsi", base, 200, cs.slice(0, walkForwardSplit(cs.length)), 0.0026, "XBTEUR", { interval: 15 })[0];
+    if (!isBest) assert.equal(gated.ok, false);
+    else if (gated.label) assert.equal(gated.label, isBest.label);
+  });
+});

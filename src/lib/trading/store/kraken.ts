@@ -13,12 +13,9 @@ export const createKrakenActions = (set: StoreSet, get: StoreGet): Pick<TradingS
       const res = await krakenSnapshot({ data: { apiKey, apiSecret, mode } });
       if (!res.ok) {
         const fallback = await krakenBalance({ data: { apiKey, apiSecret } });
-        set({
-          krakenBalances: fallback.balances,
-          krakenEur: fallback.eur,
-          krakenSyncAt: Date.now(),
-          krakenError: fallback.ok ? null : fallback.message,
-        });
+        // Échec total : on garde les derniers soldes connus. Les écraser par 0 faisait croire à un
+        // compte vide (achats refusés « EUR insuffisant » et bots live mis en pause).
+        set(balancePatchAfterFallback(fallback, Date.now()));
         get().setConnection({
           testedAt: Date.now(),
           testOk: fallback.ok,
@@ -48,3 +45,12 @@ export const createKrakenActions = (set: StoreSet, get: StoreGet): Pick<TradingS
       return { ok: true, message: res.message };
     },
 });
+
+export function balancePatchAfterFallback(
+  fallback: { ok: boolean; message: string; balances: Record<string, number>; eur: number },
+  now: number,
+): Partial<Pick<TradingState, "krakenBalances" | "krakenEur" | "krakenSyncAt" | "krakenError">> {
+  return fallback.ok
+    ? { krakenBalances: fallback.balances, krakenEur: fallback.eur, krakenSyncAt: now, krakenError: null }
+    : { krakenError: fallback.message };
+}

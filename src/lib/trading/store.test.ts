@@ -452,6 +452,16 @@ describe("paper bots", () => {
     assert.equal(s.startBot("missing").ok, false);
     assert.equal(s.duplicateBot("missing"), null);
   });
+
+  it("keeps the last known Kraken balances when a sync fails", async () => {
+    const { balancePatchAfterFallback } = await import("./store/kraken.ts");
+    const bad = balancePatchAfterFallback({ ok: false, message: "EAPI:Invalid key", balances: {}, eur: 0 }, 5);
+    assert.deepEqual(bad, { krakenError: "EAPI:Invalid key" });
+    const good = balancePatchAfterFallback({ ok: true, message: "ok", balances: { BTC: 1 }, eur: 9 }, 5);
+    assert.equal(good.krakenEur, 9);
+    assert.equal(good.krakenSyncAt, 5);
+  });
+
 });
 
 describe("demo extras — shorts, stops, hydrate, convert errors", () => {

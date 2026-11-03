@@ -124,7 +124,8 @@ export function allocateByPerformance(
 
 /** Score a live/paper bot for allocation (PnL + mild win-rate boost). */
 export function botAllocScore(bot: Bot): number {
-  const pnl = bot.stats.realizedPnl + (bot.runtime.dayPnl ?? 0);
+  // dayPnl est déjà inclus dans realizedPnl (les deux sont incrémentés à chaque vente) : ne pas le compter deux fois.
+  const pnl = bot.stats.realizedPnl;
   const wr = botWinRate(bot.stats);
   const closes = bot.stats.closes ?? 0;
   const boost = closes >= 3 ? ((wr - 50) / 100) * Math.max(20, Math.abs(pnl) * 0.1) : 0;

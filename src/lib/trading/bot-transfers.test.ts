@@ -171,3 +171,10 @@ describe("gatedOptimizeBot — sélection sans regarder l'OOS", async () => {
     else if (gated.label) assert.equal(gated.label, isBest.label);
   });
 });
+
+describe("botAllocScore", () => {
+  it("ne compte pas deux fois le PnL du jour", () => {
+    const bot = { stats: { ...EMPTY_STATS, realizedPnl: 50 }, runtime: { dayPnl: 50 } } as unknown as Bot;
+    assert.equal(botAllocScore(bot), 50);
+  });
+});

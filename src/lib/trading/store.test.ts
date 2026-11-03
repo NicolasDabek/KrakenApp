@@ -934,3 +934,13 @@ describe("desk circuit breaker", () => {
   });
 });
 
+
+describe("positionQtyAfterFill (remplissage partiel live)", async () => {
+  const { positionQtyAfterFill } = await import("./store/positions.ts");
+  it("suit la quantité réellement exécutée", () => {
+    assert.deepEqual(positionQtyAfterFill({ side: "buy", qty: 1, intendedRuntime: { positionQty: 1, inPosition: true } }, 0.6), { positionQty: 0.6, inPosition: true });
+    assert.deepEqual(positionQtyAfterFill({ side: "sell", qty: 1, intendedRuntime: { positionQty: 0, inPosition: false } }, 0.5, 0.0001), { positionQty: 0.5, inPosition: true });
+    assert.deepEqual(positionQtyAfterFill({ side: "sell", qty: 1, intendedRuntime: { positionQty: 0 } }, 0.99999999, 0.0001), {});
+    assert.deepEqual(positionQtyAfterFill({ side: "buy", qty: 1, intendedRuntime: { positionQty: 1 } }, 1), {});
+  });
+});

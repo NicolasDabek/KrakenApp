@@ -78,6 +78,8 @@ describe("formatKrakenVolume / uid", () => {
     assert.equal(formatKrakenVolume(0.00005, 8), "0.00005");
     assert.equal(formatKrakenVolume(0, 8), "0");
     assert.equal(formatKrakenVolume(-1, 8), "0");
+    assert.equal(formatKrakenVolume(0.123456789, 8), "0.12345678");
+    assert.equal(formatKrakenVolume(0.59999, 4), "0.5999");
   });
 
   it("builds unique prefixed ids", () => {

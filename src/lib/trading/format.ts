@@ -89,6 +89,8 @@ export function uid(prefix = "n"): string {
 export function formatKrakenVolume(qty: number, lotDecimals: number): string {
   const d = Math.min(Math.max(Math.floor(lotDecimals), 0), 8);
   if (!(qty > 0) || !Number.isFinite(qty)) return "0";
-  const s = qty.toFixed(d);
+  // Arrondi vers le bas : toFixed peut arrondir au-dessus du solde et faire refuser une vente (stop compris).
+  const f = 10 ** d;
+  const s = (Math.floor(qty * f + 1e-6) / f).toFixed(d);
   return s.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
 }

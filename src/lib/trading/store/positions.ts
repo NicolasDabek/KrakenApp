@@ -361,7 +361,14 @@ export const createOrderActions = (set: StoreSet, get: StoreGet): Pick<TradingSt
         fail("Paire hors EUR.", true);
         return;
       }
-      const volume = formatKrakenVolume(input.qty, meta.lotDecimals);
+      const balances = get().krakenBalances;
+      let sendQty = input.qty;
+      if (input.side === "sell" && Object.keys(balances).length > 0) {
+        // Écart de quelques satoshis (frais, arrondis) : on vend ce qui est disponible plutôt que de bloquer la sortie.
+        const have = balances[meta.base] ?? 0;
+        if (have + 1e-12 < sendQty && have >= sendQty * 0.98) sendQty = have;
+      }
+      const volume = formatKrakenVolume(sendQty, meta.lotDecimals);
       if (!(Number(volume) > 0)) {
         fail(`Volume invalide (${volume}).`);
         return;
@@ -370,7 +377,6 @@ export const createOrderActions = (set: StoreSet, get: StoreGet): Pick<TradingSt
         fail(`Sous le minimum ${meta.ordermin} ${meta.base}.`);
         return;
       }
-      const balances = get().krakenBalances;
       if (input.side === "buy") {
         const known = get().krakenSyncAt > 0 || get().krakenEur > 0 || Object.keys(balances).length > 0;
         const need = input.qty * input.price * 1.004;
@@ -381,7 +387,7 @@ export const createOrderActions = (set: StoreSet, get: StoreGet): Pick<TradingSt
       }
       if (input.side === "sell") {
         const have = balances[meta.base] ?? 0;
-        if (Object.keys(balances).length > 0 && have + 1e-12 < input.qty) {
+        if (Object.keys(balances).length > 0 && have + 1e-12 < Number(volume)) {
           fail(`Solde ${meta.base} insuffisant sur Kraken.`, true);
           return;
         }
@@ -399,7 +405,7 @@ export const createOrderActions = (set: StoreSet, get: StoreGet): Pick<TradingSt
       }
       const feeRate = get().settings.takerFee;
       let fillPx = input.price;
-      let fillQty = input.qty;
+      let fillQty = Number(volume);
       let fee = fillQty * fillPx * feeRate;
       if (res.txid) {
         try {
@@ -416,7 +422,8 @@ export const createOrderActions = (set: StoreSet, get: StoreGet): Pick<TradingSt
       }
       let pnl = 0;
       if (input.side === "sell" && input.entryAvg && input.entryAvg > 0) {
-        pnl = fillQty * fillPx - fee - input.entryAvg * fillQty;
+        // Même convention que le papier : frais d'achat estimés déduits du PnL de sortie.
+        pnl = fillQty * fillPx - fee - input.entryAvg * fillQty * (1 + feeRate);
       }
       const live: LiveFill = {
         id: uid("lf"),
@@ -463,6 +470,7 @@ export const createOrderActions = (set: StoreSet, get: StoreGet): Pick<TradingSt
               error: undefined,
               runtime: {
                 ...input.intendedRuntime,
+                ...positionQtyAfterFill(input, fillQty, meta.ordermin),
                 inFlight: false,
                 inFlightAt: undefined,
                 dayPnl,
@@ -481,3 +489,18 @@ export const createOrderActions = (set: StoreSet, get: StoreGet): Pick<TradingSt
       void get().syncKraken("light");
     },
 });
+
+/** Remplissage partiel ou volume arrondi : la position suit la quantité réellement exécutée. */
+export function positionQtyAfterFill(
+  input: { side: "buy" | "sell"; qty: number; intendedRuntime: { positionQty?: number; inPosition?: boolean } },
+  filled: number,
+  minQty = 0,
+): { positionQty?: number; inPosition?: boolean } {
+  const rt = input.intendedRuntime;
+  const diff = filled - input.qty;
+  if (rt.positionQty == null || Math.abs(diff) <= 1e-12) return {};
+  const q = Math.max(0, rt.positionQty + (input.side === "buy" ? diff : -diff));
+  // Reliquat de vente sous le minimum Kraken : invendable, on ne le garde pas comme position ouverte.
+  if (input.side === "sell" && q < minQty) return {};
+  return q > 1e-12 ? { positionQty: q, inPosition: true } : { positionQty: 0 };
+}

@@ -143,7 +143,9 @@ export const createTickActions = (set: StoreSet, get: StoreGet): Pick<TradingSta
         if (!t?.last || !meta) continue;
         const amount = plan.amountQuote / t.last;
         if (amount < meta.ordermin) continue;
-        const live = Boolean(get().connection.apiKey && get().connection.apiSecret);
+        const hasKeys = Boolean(get().connection.apiKey && get().connection.apiSecret);
+        const live = plan.venue ? plan.venue === "live" : hasKeys;
+        if (live && (!hasKeys || meta.quote !== "EUR")) continue;
         if (live) {
           plan.nextAt = now + (plan.cadence === "daily" ? 86_400_000 : 604_800_000);
           changed = true;

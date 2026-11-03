@@ -21,7 +21,16 @@ export const createAlertActions = (set: StoreSet, get: StoreGet): Pick<TradingSt
       }),
 
     addRecurring: (item) =>
-      set({ recurring: [{ ...item, id: uid("dca") }, ...get().recurring] }),
+      set({
+        recurring: [
+          {
+            ...item,
+            id: uid("dca"),
+            venue: item.venue ?? (get().connection.apiKey && get().connection.apiSecret ? "live" : "paper"),
+          },
+          ...get().recurring,
+        ],
+      }),
     toggleRecurring: (id) =>
       set({
         recurring: get().recurring.map((r) =>

@@ -159,6 +159,8 @@ export type RecurringBuy = {
   cadence: "daily" | "weekly";
   nextAt: number;
   active: boolean;
+  /** Fixé à la création : un plan démo ne devient jamais un achat réel quand des clés sont ajoutées ensuite. */
+  venue?: "paper" | "live";
 };
 
 export type JournalMood = "plan" | "win" | "loss" | "note";

@@ -327,6 +327,18 @@ describe("alerts / convert / recurring", () => {
     s.removeRecurring(id);
     assert.equal(useTradingStore.getState().recurring.length, 0);
   });
+
+  it("keeps a demo recurring plan in demo after Kraken keys are added", () => {
+    seedTickers([ticker("XBTEUR", 90_000)]);
+    const s = useTradingStore.getState();
+    s.addRecurring({ pair: "XBTEUR", amountQuote: 90, cadence: "daily", nextAt: Date.now() - 1_000, active: true });
+    assert.equal(useTradingStore.getState().recurring[0]!.venue, "paper");
+    const conn = useTradingStore.getState().connection;
+    useTradingStore.setState({ connection: { ...conn, apiKey: "k", apiSecret: "s" } });
+    s.processTick();
+    assert.ok(useTradingStore.getState().fills.some((f) => f.pair === "XBTEUR"));
+    useTradingStore.setState({ connection: conn });
+  });
 });
 
 describe("paper bots", () => {

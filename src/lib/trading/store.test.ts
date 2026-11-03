@@ -1,3 +1,4 @@
+import { tradingDay } from "./bots/common.ts";
 import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_PAPER } from "./bots.ts";
@@ -540,7 +541,7 @@ describe("demo extras — shorts, stops, hydrate, convert errors", () => {
     useTradingStore.setState({
       bots: useTradingStore.getState().bots.map((b) =>
         b.id === bot.id
-          ? { ...b, runtime: { dayStamp: new Date().toISOString().slice(0, 10), dayPnl: -40 } }
+          ? { ...b, runtime: { dayStamp: tradingDay(Date.now()), dayPnl: -40 } }
           : b,
       ),
     });
@@ -921,7 +922,7 @@ describe("desk circuit breaker", () => {
           ? {
               ...b,
               status: "running" as const,
-              runtime: { dayPnl: -80, dayStamp: new Date().toISOString().slice(0, 10) },
+              runtime: { dayPnl: -80, dayStamp: tradingDay(Date.now()) },
             }
           : b,
       ),

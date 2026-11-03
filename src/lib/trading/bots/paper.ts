@@ -60,7 +60,11 @@ export function applyPaperFill(
   let cash = paper.cash;
   let realized = paper.realizedPnl;
   let pnl = 0;
-  const basisQty = input.side === "sell" && input.costBasis && input.costBasis > 0 ? input.costBasis : pos.avg;
+  // Le prix de revient inclut les frais d'achat : sinon le PnL réalisé (gains/pertes, stop journalier)
+  // ignore la moitié des frais et compte comme gagnants des trades perdants.
+  const basisQty =
+    input.side === "sell" && input.costBasis && input.costBasis > 0 ? input.costBasis : pos.avg;
+  const buyFeeShare = basisQty * input.qty * feeRate;
 
   if (input.side === "buy") {
     const spend = notional + fee;
@@ -73,7 +77,7 @@ export function applyPaperFill(
     if (pos.qty + 1e-12 < input.qty) {
       return { ok: false, message: `Position ${input.base} insuffisante.` };
     }
-    pnl = notional - fee - basisQty * input.qty;
+    pnl = notional - fee - buyFeeShare - basisQty * input.qty;
     const newQty = pos.qty - input.qty;
     if (newQty <= 1e-12) delete holdings[input.base];
     else {

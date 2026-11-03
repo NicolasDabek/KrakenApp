@@ -1,5 +1,5 @@
 import { PAIR_BY_ID } from "../pairs.ts";
-import type { Bot, BotKind, BotParams, Candle } from "../types.ts";
+import type { Bot, BotKind, BotParams, Candle, PaperAccount } from "../types.ts";
 import { BOT_KINDS, defaultParams } from "./catalog.ts";
 import { EMPTY_STATS } from "./common.ts";
 import type { BotEvalCtx } from "./common.ts";
@@ -88,6 +88,8 @@ export function backtestBot(
   let paper = resetPaperAccount(startEquity, feeRate);
   const curve: { t: number; v: number }[] = [{ t: candles[warmup]!.time * 1000, v: startEquity }];
   let barsInPos = 0;
+  // Journal complet : paper.trades est tronqué à 250 lignes, ce qui faussait les stats des longs backtests.
+  const allTrades: PaperAccount["trades"] = [];
   // Drawdown suivi à chaque bougie (la courbe n'est qu'échantillonnée) et en % du pic du moment.
   let ddPeak = startEquity;
   let ddMax = 0;
@@ -140,6 +142,7 @@ export function backtestBot(
       });
       if (res.ok) {
         paper = res.paper;
+        allTrades.push(res.trade);
         bot = { ...bot, lastActionAt: c.time * 1000 };
         const compound = params.compoundPct ?? 0;
         if (compound > 0 && fill.side === "sell" && res.trade.pnl > 0) {
@@ -158,7 +161,8 @@ export function backtestBot(
 
   const last = candles[candles.length - 1]!.close;
   const eq = paper.cash + Object.values(paper.holdings).reduce((s, h) => s + h.qty * last, 0);
-  const sells = paper.trades.filter((t) => t.side === "sell");
+  allTrades.reverse();
+  const sells = allTrades.filter((t) => t.side === "sell");
   const winsList = sells.filter((t) => t.pnl > 0);
   const lossList = sells.filter((t) => t.pnl <= 0);
   const grossWin = winsList.reduce((s, t) => s + t.pnl, 0);
@@ -168,7 +172,7 @@ export function backtestBot(
   const buyHold = qtyBh * last - startEquity;
   const tested = candles.length - warmup;
   const { sharpe, sortino } = riskRatios(curve, candles[warmup]!.time, candles[candles.length - 1]!.time);
-  const chrono = [...paper.trades].reverse();
+  const chrono = [...allTrades].reverse();
   const holds: number[] = [];
   let opened: number | null = null;
   for (const t of chrono) {
@@ -180,8 +184,8 @@ export function backtestBot(
   }
 
   return {
-    trades: paper.trades.length,
-    buys: paper.trades.filter((t) => t.side === "buy").length,
+    trades: allTrades.length,
+    buys: allTrades.filter((t) => t.side === "buy").length,
     sells: sells.length,
     wins: winsList.length,
     losses: lossList.length,
@@ -207,7 +211,7 @@ export function backtestBot(
     requestedDays: opts.requestedDays ?? 0,
     exposurePct: tested ? (barsInPos / tested) * 100 : 0,
     equityCurve: curve.slice(-240),
-    tradeLog: paper.trades
+    tradeLog: allTrades
       .slice()
       .reverse()
       .map((t) => ({ time: t.time, side: t.side, price: t.price, pnl: t.pnl, note: t.note })),

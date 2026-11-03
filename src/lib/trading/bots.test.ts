@@ -566,7 +566,9 @@ describe("paper account", () => {
     });
     assert.equal(sell.ok, true);
     if (!sell.ok) return;
-    assert.ok(Math.abs(sell.trade.pnl - (11_000 - 28.6 - 10_000)) < 1e-6);
+    // PnL net des deux frais (achat 26 + vente 28.6) = variation réelle du cash.
+    assert.ok(Math.abs(sell.trade.pnl - (11_000 - 28.6 - 26 - 10_000)) < 1e-6);
+    assert.ok(Math.abs(sell.paper.cash - 20_000 - sell.trade.pnl) < 1e-6);
     assert.ok(sell.paper.holdings.BTC == null);
     assert.ok(sell.paper.realizedPnl > 0);
   });
@@ -653,6 +655,14 @@ describe("backtest / optimizer / preview", () => {
     });
     assert.ok(r);
     assert.ok(r!.maxDrawdownPct > 20, `dd ${r!.maxDrawdownPct}`);
+  });
+
+  it("counts every trade of a long backtest (no 250-line truncation)", () => {
+    const cs = candlesFrom(Array.from({ length: 420 }, (_, i) => 100 + Math.sin(i / 9) * 3));
+    const r = backtestBot("dca", { intervalMs: 1 }, 10, cs, 0.0026, "XBTEUR", { startingBalance: 1_000_000 });
+    assert.ok(r);
+    assert.ok(r!.buys > 300, `buys ${r!.buys}`);
+    assert.equal(r!.trades, r!.tradeLog.length);
   });
 
   it("runs a DCA backtest that spends fees and tracks equity", () => {

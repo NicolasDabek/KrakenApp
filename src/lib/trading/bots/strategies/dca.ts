@@ -19,6 +19,14 @@ export function evalDca(bot: Bot, ctx: BotEvalCtx): { fills: BotFill[]; runtime:
   runtime.nextDcaAt = ctx.now + every;
   runtime.lastPrice = ctx.ticker.last;
   if (!(qty > 0)) return { fills: [], runtime, note: "Taille trop faible." };
+  // Suivi de position : quantité cumulée et prix moyen pondéré, pour que SL / TP / durée max s'appliquent.
+  // L'heure d'entrée (premier achat) est posée par applyRisk et conservée pendant l'accumulation.
+  const heldQty = runtime.inPosition && (runtime.positionQty ?? 0) > 0 ? runtime.positionQty! : 0;
+  const heldAvg = heldQty > 0 ? (runtime.positionAvg ?? fillPx) : 0;
+  const newQty = heldQty + qty;
+  runtime.inPosition = true;
+  runtime.positionQty = newQty;
+  runtime.positionAvg = (heldQty * heldAvg + qty * fillPx) / newQty;
   return {
     fills: [{ side: "buy", qty, price: fillPx, note: `DCA ${roundSmart(sizeQuoteOf(bot, ctx))} EUR` }],
     runtime,

@@ -470,7 +470,7 @@ export const createOrderActions = (set: StoreSet, get: StoreGet): Pick<TradingSt
               error: undefined,
               runtime: {
                 ...input.intendedRuntime,
-                ...positionQtyAfterFill(input, fillQty, meta.ordermin),
+                ...positionQtyAfterFill(input, fillQty, meta.ordermin, fillPx),
                 inFlight: false,
                 inFlightAt: undefined,
                 dayPnl,
@@ -492,14 +492,21 @@ export const createOrderActions = (set: StoreSet, get: StoreGet): Pick<TradingSt
 
 /** Remplissage partiel ou volume arrondi : la position suit la quantité réellement exécutée. */
 export function positionQtyAfterFill(
-  input: { side: "buy" | "sell"; qty: number; intendedRuntime: { positionQty?: number; inPosition?: boolean } },
+  input: { side: "buy" | "sell"; qty: number; price?: number; intendedRuntime: { positionQty?: number; positionAvg?: number; inPosition?: boolean } },
   filled: number,
   minQty = 0,
-): { positionQty?: number; inPosition?: boolean } {
+  fillPx?: number,
+): { positionQty?: number; positionAvg?: number; inPosition?: boolean } {
   const rt = input.intendedRuntime;
   const diff = filled - input.qty;
-  if (rt.positionQty == null || Math.abs(diff) <= 1e-12) return {};
+  const priced = input.side === "buy" && fillPx && fillPx > 0 && input.price && input.price > 0 && rt.positionAvg && rt.positionAvg > 0 && rt.positionQty;
+  if (rt.positionQty == null || (Math.abs(diff) <= 1e-12 && !priced)) return {};
   const q = Math.max(0, rt.positionQty + (input.side === "buy" ? diff : -diff));
+  if (priced && q > 1e-12) {
+    // Prix moyen recalé sur le prix réellement exécuté (renforts DCA, entrées live).
+    const cost = rt.positionAvg! * rt.positionQty! - input.qty * input.price! + filled * fillPx!;
+    return { positionQty: q, positionAvg: Math.max(0, cost / q), inPosition: true };
+  }
   // Reliquat de vente sous le minimum Kraken : invendable, on ne le garde pas comme position ouverte.
   if (input.side === "sell" && q < minQty) return {};
   return q > 1e-12 ? { positionQty: q, inPosition: true } : { positionQty: 0 };

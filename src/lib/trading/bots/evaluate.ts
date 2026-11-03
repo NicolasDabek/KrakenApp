@@ -382,7 +382,10 @@ function applyRisk(
   }
 
   if (runtime.inPosition && runtime.positionQty && runtime.positionAvg && !fills.some((f) => f.side === "sell")) {
-    const avg = runtime.positionAvg;
+    // Renfort DCA ce tick : on juge le risque sur la position détenue avant l'achat, sinon la moyenne
+    // abaissée par le renfort masquerait un stop déjà atteint.
+    const addOn = bot.kind === "dca" && prev.inPosition && (prev.positionAvg ?? 0) > 0 && keptBuy;
+    const avg = addOn ? prev.positionAvg! : runtime.positionAvg;
     const pctLow = ((riskLow - avg) / avg) * 100;
     const pctHigh = ((riskHigh - avg) / avg) * 100;
     const sl = bot.params.slPct;
@@ -407,6 +410,12 @@ function applyRisk(
     const open = ctx.ticker.open;
     const stopPx = (level: number) => sellPx(ctx.barLow != null && open > 0 ? Math.min(level, open) : level);
     const closeAll = (price: number, why: string) => {
+      if (bot.kind === "dca" && prev.inPosition && fills.some((f) => f.side === "buy")) {
+        // Sortie de risque le tick d'un renfort DCA : on n'achète pas pour revendre aussitôt,
+        // on clôture la position détenue avant ce tick.
+        fills = fills.filter((f) => f.side !== "buy");
+        runtime.positionQty = prev.positionQty;
+      }
       fills.push({ side: "sell", qty: runtime.positionQty!, price, note: why });
       flattenGrid(runtime);
       markFlat(runtime);

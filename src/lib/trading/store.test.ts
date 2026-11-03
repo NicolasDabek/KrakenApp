@@ -1003,5 +1003,22 @@ describe("positionQtyAfterFill (remplissage partiel live)", async () => {
     assert.deepEqual(positionQtyAfterFill({ side: "sell", qty: 1, intendedRuntime: { positionQty: 0, inPosition: false } }, 0.5, 0.0001), { positionQty: 0.5, inPosition: true });
     assert.deepEqual(positionQtyAfterFill({ side: "sell", qty: 1, intendedRuntime: { positionQty: 0 } }, 0.99999999, 0.0001), {});
     assert.deepEqual(positionQtyAfterFill({ side: "buy", qty: 1, intendedRuntime: { positionQty: 1 } }, 1), {});
+    // Renfort DCA live : 1 détenu à 100, renfort 1 estimé à 80, exécuté à 82 → moyenne 91.
+    const r = positionQtyAfterFill({ side: "buy", qty: 1, price: 80, intendedRuntime: { positionQty: 2, positionAvg: 90, inPosition: true } }, 1, 0, 82);
+    assert.equal(r.positionQty, 2);
+    assert.ok(Math.abs(r.positionAvg! - 91) < 1e-9);
+  });
+});
+
+describe("DCA papier — position suivie par le moteur", () => {
+  it("enregistre la position après un achat papier", () => {
+    seedTickers([ticker("XBTEUR", 90_000)]);
+    const bot = useTradingStore.getState().createBot({ kind: "dca", venue: "paper", pair: "XBTEUR", interval: 15, sizeQuote: 90, params: { intervalMs: 60_000 } });
+    useTradingStore.setState({ bots: useTradingStore.getState().bots.map((b) => (b.id === bot.id ? { ...b, status: "running" as const } : b)) });
+    useTradingStore.getState().runBots();
+    const rt = useTradingStore.getState().bots.find((b) => b.id === bot.id)!.runtime;
+    assert.equal(rt.inPosition, true);
+    assert.ok((rt.positionQty ?? 0) > 0);
+    assert.ok((rt.positionAvg ?? 0) > 0);
   });
 });

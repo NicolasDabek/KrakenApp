@@ -1818,3 +1818,65 @@ describe("trend quality filter (EMA 20/50 + volume)", () => {
     assert.equal(paramVariants("dca", defaultParams("dca", 100)).length, 1);
   });
 });
+
+describe("DCA — suivi de position", () => {
+  const p = (last: number) => ticker(last, { bid: last, ask: last });
+  it("cumule la quantité, pondère le prix moyen et garde l'heure du premier achat", () => {
+    let bot = makeBot("dca", { sizeQuote: 100, params: { intervalMs: 1000 } });
+    const a = evaluateBot(bot, { now: 1000, ticker: p(100) });
+    assert.equal(a.runtime.inPosition, true);
+    assert.equal(a.runtime.entryAt, 1000);
+    bot = { ...bot, runtime: a.runtime };
+    const b = evaluateBot(bot, { now: 2000, ticker: p(50) });
+    assert.ok(Math.abs(b.runtime.positionQty! - 3) < 1e-9);
+    assert.ok(Math.abs(b.runtime.positionAvg! - 200 / 3) < 1e-9);
+    assert.equal(b.runtime.entryAt, 1000);
+    assert.ok(b.fills.every((f) => f.side === "buy"));
+  });
+
+  it("sans SL/TP/durée max, ne vend jamais", () => {
+    const cs = candlesFrom(Array.from({ length: 200 }, (_, i) => 100 - i * 0.4));
+    const r = backtestBot("dca", { intervalMs: 1 }, 50, cs, 0.0026, "XBTEUR", { startingBalance: 100_000 });
+    assert.ok(r);
+    assert.equal(r!.sells, 0);
+    assert.ok(r!.buys > 50);
+  });
+
+  it("le stop-loss clôture toute la position puis l'accumulation repart de zéro", () => {
+    let bot = makeBot("dca", { sizeQuote: 100, params: { intervalMs: 1000, slPct: 10 } });
+    let r = evaluateBot(bot, { now: 1000, ticker: p(100) });
+    bot = { ...bot, runtime: r.runtime };
+    r = evaluateBot(bot, { now: 1500, ticker: p(85) });
+    assert.deepEqual(r.fills.map((f) => f.side), ["sell"]);
+    assert.ok(Math.abs(r.fills[0]!.qty - 1) < 1e-9);
+    assert.equal(r.runtime.inPosition, false);
+    assert.equal(r.runtime.entryAt, undefined);
+    bot = { ...bot, runtime: r.runtime };
+    r = evaluateBot(bot, { now: 3000, ticker: p(80) });
+    assert.equal(r.runtime.positionAvg, 80);
+    assert.equal(r.runtime.entryAt, 3000);
+  });
+
+  it("n'achète pas un renfort le tick où le stop part", () => {
+    let bot = makeBot("dca", { sizeQuote: 100, params: { intervalMs: 1000, slPct: 10 } });
+    const r0 = evaluateBot(bot, { now: 1000, ticker: p(100) });
+    bot = { ...bot, runtime: r0.runtime };
+    const r = evaluateBot(bot, { now: 2000, ticker: p(85) });
+    assert.deepEqual(r.fills.map((f) => f.side), ["sell"]);
+    assert.ok(Math.abs(r.fills[0]!.qty - 1) < 1e-9);
+  });
+
+  it("TP et durée max clôturent la position cumulée", () => {
+    let bot = makeBot("dca", { sizeQuote: 100, params: { intervalMs: 1000, tpPct: 5 } });
+    let r = evaluateBot(bot, { now: 1000, ticker: p(100) });
+    bot = { ...bot, runtime: r.runtime };
+    r = evaluateBot(bot, { now: 1500, ticker: p(110) });
+    assert.match(r.fills[0]!.note, /TP|Take|profit/i);
+    let hold = makeBot("dca", { sizeQuote: 100, params: { intervalMs: 9e12, maxHoldMin: 1 } });
+    r = evaluateBot(hold, { now: 1000, ticker: p(100) });
+    hold = { ...hold, runtime: r.runtime };
+    r = evaluateBot(hold, { now: 1000 + 61_000, ticker: p(100) });
+    assert.match(r.fills[0]!.note, /temps/);
+    assert.equal(r.runtime.inPosition, false);
+  });
+});
